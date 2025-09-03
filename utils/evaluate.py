@@ -73,6 +73,10 @@ def evaluate(model: 'ContinualModel', dataset: 'ContinualDataset', last=False, r
                 break
             inputs, labels = data[0], data[1]
             inputs, labels = inputs.to(model.device), labels.to(model.device)
+
+            inputs = inputs.transpose(0, 1).contiguous()
+            # print(f"inputs.shape:{inputs.shape}")
+
             if 'class-il' not in model.COMPATIBILITY and 'general-continual' not in model.COMPATIBILITY:
                 outputs = model(inputs, k)
             else:
@@ -84,6 +88,8 @@ def evaluate(model: 'ContinualModel', dataset: 'ContinualDataset', last=False, r
             if return_loss:
                 loss = loss_fn(outputs, labels)
                 avg_loss += loss.item()
+
+            # print(f"outputs.shape:{outputs.shape}")
 
             _, pred = torch.max(outputs[:, :n_classes].data, 1)
             correct += torch.sum(pred == labels).item()

@@ -1,3 +1,5 @@
+from typing import Tuple
+
 import torch
 import torchvision.transforms as transforms
 from torchvision.datasets import MNIST
@@ -40,7 +42,6 @@ class SeqSpikingMNIST(ContinualDataset):
         super(SeqSpikingMNIST, self).__init__(args)
 
         self.T = args.T
-        self.loss = args.loss
 
     def get_data_loaders(self) -> Tuple[torch.utils.data.DataLoader, torch.utils.data.DataLoader]:
         transform = transforms.Compose([
@@ -66,12 +67,7 @@ class SeqSpikingMNIST(ContinualDataset):
 
     @staticmethod
     def get_loss():
-        if self.loss == 'tsce':
-            return TSCELoss
-        elif self.loss == 'tserkd':
-            return TSERKDLoss
-        else:
-            raise ValueError()
+        return TSCELoss()
 
     @staticmethod
     def get_normalization_transform():

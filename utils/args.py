@@ -260,6 +260,8 @@ def add_experiment_args(parser: ArgumentParser) -> None:
     """
     exp_group = parser.add_argument_group('Experiment arguments', 'Arguments used to define the experiment settings.')
 
+    exp_group.add_argument('--T', type=int, default=2,
+                           help='Time steps for SNNs. Select between [1, 2, 4].')
     exp_group.add_argument('--lr', required=True, type=float, help='Learning rate. This should either be set as default by the model '
                            '(with `set_defaults <https://docs.python.org/3/library/argparse.html#argparse.ArgumentParser.set_defaults>`_),'
                            ' by the dataset (with `set_default_from_args`, see :ref:`module-datasets.utils`), or with `--lr=<value>`.')
