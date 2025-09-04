@@ -15,11 +15,18 @@ class SEr(ContinualModel):
     @staticmethod
     def get_parser(parser) -> ArgumentParser:
         """
-        Returns an ArgumentParser object with predefined arguments for the SEr model.
+        Returns an ArgumentParser object with predefined arguments for the SER model.
 
         This model requires the `add_rehearsal_args` to include the buffer-related arguments.
         """
         add_rehearsal_args(parser)
+
+        parser.add_argument('--T', type=int, default=2, required=True,
+                            help='Time steps for SNNs. Select between [1, 2, 4].')
+
+        parser.add_argument('--T', type=int, default=2, required=True,
+                            help='Time steps for SNNs. Select between [1, 2, 4].')
+
         return parser
 
     def __init__(self, backbone, loss, args, transform, dataset=None):
@@ -37,7 +44,7 @@ class SEr(ContinualModel):
 
         real_batch_size = inputs.shape[0]
 
-        # print(f"input.shape: {inputs.shape}")
+        print(f"input.shape: {inputs.shape}")
 
         self.opt.zero_grad()
         if not self.buffer.is_empty():
@@ -49,13 +56,13 @@ class SEr(ContinualModel):
             buf_inputs, buf_labels = self.buffer.get_data(
                 self.args.minibatch_size, transform=self.transform, device=self.device)
 
-            # print(f"buf_input.shape: {buf_inputs.shape}")
+            print(f"buf_input.shape: {buf_inputs.shape}")
             inputs = torch.cat((inputs, buf_inputs))
             labels = torch.cat((labels, buf_labels))
 
         # The inputs are transposed to the shape [T, B, C, H, W] for compatibility
         inputs = inputs.transpose(0, 1).contiguous()
-        # print(f"input.shape: {inputs.shape}")
+        print(f"input.shape: {inputs.shape}")
 
         outputs = self.net(inputs)
         loss = self.loss(outputs, labels)

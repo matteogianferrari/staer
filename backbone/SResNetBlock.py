@@ -459,7 +459,7 @@ def sresnet19(num_classes: int) -> SResNet:
     spike_grad = surrogate.atan()
 
     return SResNet(
-        in_channels=1,
+        in_channels=3,
         num_classes=num_classes,
         beta=0.5,
         threshold=1.0,
