@@ -24,9 +24,6 @@ class SEr(ContinualModel):
         parser.add_argument('--T', type=int, default=2, required=True,
                             help='Time steps for SNNs. Select between [1, 2, 4].')
 
-        parser.add_argument('--T', type=int, default=2, required=True,
-                            help='Time steps for SNNs. Select between [1, 2, 4].')
-
         return parser
 
     def __init__(self, backbone, loss, args, transform, dataset=None):
