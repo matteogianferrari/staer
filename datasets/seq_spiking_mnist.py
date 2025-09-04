@@ -11,7 +11,7 @@ from utils.conf import base_path
 from datasets.utils import set_default_from_args
 from datasets.transforms.static_encoding import StaticEncoding
 from datasets.seq_mnist import MyMNIST
-from models.spiking_er.losses import TSCELoss, TSERKDLoss
+from models.spiking_er.losses import TSCELoss
 
 
 class SeqSpikingMNIST(ContinualDataset):
@@ -36,7 +36,7 @@ class SeqSpikingMNIST(ContinualDataset):
     N_TASKS = 5
     N_CLASSES = N_CLASSES_PER_TASK * N_TASKS
     SIZE = (28, 28)
-    TRANSFORM = None
+    TRANSFORM = transforms.ToTensor()
 
     def __init__(self, args: Namespace) -> None:
         super(SeqSpikingMNIST, self).__init__(args)
@@ -45,7 +45,7 @@ class SeqSpikingMNIST(ContinualDataset):
 
     def get_data_loaders(self) -> Tuple[torch.utils.data.DataLoader, torch.utils.data.DataLoader]:
         transform = transforms.Compose([
-            transforms.ToTensor(),
+            self.TRANSFORM,
             StaticEncoding(T=self.T)
         ])
 

@@ -41,6 +41,7 @@ class SEr(ContinualModel):
 
         self.opt.zero_grad()
         if not self.buffer.is_empty():
+            # Same transform that is applied in the dataset must be applied to the buffer
             self.transform = transforms.Compose([
                 StaticEncoding(T=self.T)
             ])
@@ -52,8 +53,10 @@ class SEr(ContinualModel):
             inputs = torch.cat((inputs, buf_inputs))
             labels = torch.cat((labels, buf_labels))
 
+        # The inputs are transposed to the shape [T, B, C, H, W] for compatibility
         inputs = inputs.transpose(0, 1).contiguous()
         # print(f"input.shape: {inputs.shape}")
+
         outputs = self.net(inputs)
         loss = self.loss(outputs, labels)
         loss.backward()

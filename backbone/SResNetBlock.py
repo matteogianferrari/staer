@@ -4,7 +4,6 @@ import snntorch as snn
 from snntorch import surrogate
 from backbone import MammothBackbone, register_backbone
 
-# TODO: CHECK FILE
 
 def conv3x3(in_channels: int, out_channels: int, stride: int = 1) -> nn.Conv2d:
     """Pre-configured 2D 3x3 convolution to use in ResNet architectures.
@@ -399,7 +398,6 @@ class SResNet(MammothBackbone):
             torch.Tensor: Logits for every time step if the model is in training mode, shape [T, B, K],
                 mean of logits over time steps if the model is in eval mode, shape [B, K].
         """
-        # print(f"x.shape{x.shape}")
         # Stem block
         x = self.lif_stem(self.stem(x))
 

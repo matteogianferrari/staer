@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-# TODO: CHECK FILE
 
 class TSCELoss(nn.Module):
     """Temporal Separation Cross Entropy (TSCE) loss function.
@@ -49,8 +48,6 @@ class TSCELoss(nn.Module):
         Returns:
             torch.Tensor: A scalar tensor containing the TSCE loss value.
         """
-        # print(f"s_logits.shape{s_logits.shape}")
-        # print(f"targets.shape{targets.shape}")
         # Retrieves the shape of the student logits
         T, B, K = s_logits.shape
 
@@ -62,9 +59,6 @@ class TSCELoss(nn.Module):
 
         # Repeats the targets to match the vectorized logits, targets.shape: [T * B]
         targets = targets.repeat(T)
-
-        # print(f"s_logits.shape{s_logits.shape}")
-        # print(f"targets.shape{targets.shape}")
 
         # Computes the CE loss over T and over B
         loss_val = F.cross_entropy(s_logits, targets, reduction='mean')
@@ -229,7 +223,7 @@ class TSERKDLoss(nn.Module):
         self.kl_loss = TSKLLoss(tau=tau)
         self.e_reg = EntropyReg(tau=tau)
 
-    def forward(self, t_logits: torch.Tensor, s_logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+    def forward(self, t_logits: torch.Tensor, s_logits: torch.Tensor, targets: torch.Tensor):
         """Computes the TSERKD loss.
 
         Args:
