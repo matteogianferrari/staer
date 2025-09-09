@@ -59,11 +59,13 @@ class SeqSpikingMNIST(ContinualDataset):
 
     @set_default_from_args("backbone")
     def get_backbone():
-        return "sresnet19"
+        return "sresnet19-mnist"
 
     @staticmethod
     def get_transform():
-        return SeqSpikingMNIST.TRANSFORM
+        transform = transforms.Compose(
+            [transforms.ToPILImage(), SeqSpikingMNIST.TRANSFORM])
+        return transform
 
     @staticmethod
     def get_loss():
@@ -79,7 +81,7 @@ class SeqSpikingMNIST(ContinualDataset):
 
     @set_default_from_args('batch_size')
     def get_batch_size(self):
-        return 32
+        return 10
 
     @set_default_from_args('n_epochs')
     def get_epochs(self):

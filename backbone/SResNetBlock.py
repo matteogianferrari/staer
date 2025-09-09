@@ -416,10 +416,12 @@ class SResNet(MammothBackbone):
         return x if self.training else x.mean(0)
 
 
-@register_backbone("sresnet18")
-def sresnet18(num_classes: int) -> SResNet:
+# TODO: args in this register backbone
+
+@register_backbone("sresnet18-mnist")
+def sresnet18_mnist(num_classes: int) -> SResNet:
     """
-    Instantiates a SResNet18 network.
+    Instantiates a SResNet18 network for Sequential SMNIST dataset.
 
     Args:
         num_classes: number of output classes
@@ -445,10 +447,39 @@ def sresnet18(num_classes: int) -> SResNet:
     # TODO: STATE DICT
 
 
-@register_backbone("sresnet19")
-def sresnet19(num_classes: int) -> SResNet:
+@register_backbone("sresnet18-cifar10")
+def sresnet18_cifar10(num_classes: int) -> SResNet:
     """
-    Instantiates a SResNet19 network.
+    Instantiates a SResNet18 network for Sequential SCIFAR10 dataset.
+
+    Args:
+        num_classes: number of output classes
+
+    Returns:
+        ResNet network
+    """
+    spike_grad = surrogate.atan()
+
+    return SResNet(
+        in_channels=3,
+        num_classes=num_classes,
+        beta=0.5,
+        threshold=1.0,
+        spike_grad=spike_grad,
+        stem_channels=64,
+        stage_blocks=[2, 2, 2, 2],
+        stage_channels=[64, 128, 256, 512],
+        learn_beta=False,
+        learn_threshold=False
+    )
+
+    # TODO: STATE DICT
+
+
+@register_backbone("sresnet19-mnist")
+def sresnet19_mnist(num_classes: int) -> SResNet:
+    """
+    Instantiates a SResNet19 network for Sequential SMNIST dataset.
 
     Args:
         num_classes: number of output classes
@@ -471,4 +502,33 @@ def sresnet19(num_classes: int) -> SResNet:
         learn_threshold=False
     )
 
-    # TODO: STATE DICT EXPERIMENTS FOR SMNIST
+    # TODO: STATE DICT EXPERIMENTS
+
+
+@register_backbone("sresnet19-cifar10")
+def sresnet19_cifar10(num_classes: int) -> SResNet:
+    """
+    Instantiates a SResNet19 network for Sequential SCIFAR10 dataset.
+
+    Args:
+        num_classes: number of output classes
+
+    Returns:
+        ResNet network
+    """
+    spike_grad = surrogate.atan()
+
+    return SResNet(
+        in_channels=3,
+        num_classes=num_classes,
+        beta=0.5,
+        threshold=1.0,
+        spike_grad=spike_grad,
+        stem_channels=128,
+        stage_blocks=[3, 3, 2],
+        stage_channels=[128, 256, 512],
+        learn_beta=False,
+        learn_threshold=False
+    )
+
+    # TODO: STATE DICT EXPERIMENTS

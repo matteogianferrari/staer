@@ -92,11 +92,13 @@ class SeqSpikingCIFAR10(ContinualDataset):
 
     @set_default_from_args("backbone")
     def get_backbone():
-        return "sresnet19"
+        return "sresnet19-cifar10"
 
     @staticmethod
     def get_transform():
-        return None
+        transform = transforms.Compose(
+            [transforms.ToPILImage(), SeqSpikingCIFAR10.TRAIN_TRANSFORM])
+        return transform
 
     @staticmethod
     def get_loss():

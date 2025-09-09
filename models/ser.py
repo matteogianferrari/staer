@@ -1,4 +1,5 @@
 import torch
+import torch.nn as nn
 import torchvision.transforms as transforms
 
 from models.utils.continual_model import ContinualModel
@@ -34,24 +35,26 @@ class SEr(ContinualModel):
         self.buffer = Buffer(self.args.buffer_size)
         self.T = args.T
 
+        # print(type(self.transform), self.transform)
+        self.buffer_transform = transforms.Compose([
+            dataset.get_transform(),
+            StaticEncoding(T=self.T)
+        ])
+        # print(type(self.buffer_transform), self.buffer_transform)
+
     def observe(self, inputs, labels, not_aug_inputs, epoch=None):
         """
         SER trains on the current task using the data provided, but also augments the batch with data from the buffer.
         """
 
         real_batch_size = inputs.shape[0]
-
+        #print(type(self.buffer_transform), self.buffer_transform)
         # print(f"input.shape: {inputs.shape}")
 
         self.opt.zero_grad()
         if not self.buffer.is_empty():
-            # Same transform that is applied in the dataset must be applied to the buffer
-            self.transform = transforms.Compose([
-                StaticEncoding(T=self.T)
-            ])
-
             buf_inputs, buf_labels = self.buffer.get_data(
-                self.args.minibatch_size, transform=self.transform, device=self.device)
+                self.args.minibatch_size, transform=self.buffer_transform, device=self.device)
 
             # print(f"buf_input.shape: {buf_inputs.shape}")
             inputs = torch.cat((inputs, buf_inputs))

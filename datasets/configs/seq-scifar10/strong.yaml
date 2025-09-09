@@ -20,5 +20,5 @@ TEST_TRANSFORM:
       std: [0.2470, 0.2435, 0.2615]
 transform_type: strong
 batch_size: 32
-backbone: sresnet19
+backbone: sresnet19-cifar10
 n_epochs: 50
