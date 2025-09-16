@@ -122,8 +122,13 @@ class TSKLLoss(nn.Module):
         # Reshapes the student log probabilities to perform KL in a vectorized way, s_log_prob.shape: [T * B, K]
         s_log_prob = s_log_prob.reshape(-1, K)
 
-        # Repeats the teacher log probabilities to match the student log probabilities, t_log_prob.shape: [T * B, K]
-        t_log_prob = t_log_prob.repeat(T, 1)
+        # print(f"s_log_prob.shape: {s_log_prob.shape}")
+        # print(f"t_log_prob.shape: {t_log_prob.shape}")
+        if t_log_prob.dim() != 3:
+            # Repeats the teacher log probabilities to match the student log probabilities, t_log_prob.shape: [T * B, K]
+            t_log_prob = t_log_prob.repeat(T, 1)
+        else:
+            t_log_prob = t_log_prob.reshape(-1, K)
 
         # Computes the KL divergence between the log probabilities and performs averaging
         loss_val = F.kl_div(input=s_log_prob, target=t_log_prob, log_target=True, reduction='batchmean')

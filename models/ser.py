@@ -1,5 +1,4 @@
 import torch
-import torch.nn as nn
 import torchvision.transforms as transforms
 
 from models.utils.continual_model import ContinualModel
@@ -32,6 +31,7 @@ class SEr(ContinualModel):
         The SER model maintains a buffer of previously seen examples and uses them to augment the current batch during training.
         """
         super(SEr, self).__init__(backbone, loss, args, transform, dataset=dataset)
+
         self.buffer = Buffer(self.args.buffer_size)
         self.T = args.T
 
@@ -69,7 +69,6 @@ class SEr(ContinualModel):
         loss.backward()
         self.opt.step()
 
-        self.buffer.add_data(examples=not_aug_inputs,
-                             labels=labels[:real_batch_size])
+        self.buffer.add_data(examples=not_aug_inputs, labels=labels[:real_batch_size])
 
         return loss.item()

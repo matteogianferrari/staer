@@ -460,6 +460,9 @@ class Buffer:
         Note:
             Only the examples are required. The other tensors are initialized only if they are provided.
         """
+        if logits.dim() == 3:
+            logits = logits.transpose(0, 1).contiguous()
+
         if not hasattr(self, 'examples'):
             self.init_tensors(examples, labels, logits, task_labels, true_labels)
 
@@ -470,7 +473,9 @@ class Buffer:
                 index = self.sample_selection_fn(self.num_seen_examples, labels=self.labels, proposed_class=labels[i])
             else:
                 index = self.sample_selection_fn(self.num_seen_examples)
+
             self.num_seen_examples += 1
+
             if index >= 0:
                 if self.sample_selection_strategy == 'unlimited' and self.num_seen_examples > self._buffer_size:
                     self._buffer_size *= 2
@@ -479,6 +484,7 @@ class Buffer:
                     self.sample_selection_fn.update_unique_map(labels[i], self.labels[index] if index < self.num_seen_examples else None)
 
                 self.examples[index] = examples[i].to(self.device)
+
                 if labels is not None:
                     self.labels[index] = labels[i].to(self.device)
                 if logits is not None:
