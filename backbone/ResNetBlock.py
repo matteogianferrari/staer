@@ -9,7 +9,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.functional import avg_pool2d, relu
-from torchvision.models import resnet18
+import torchvision.models as tv_mod
 
 from backbone import MammothBackbone, register_backbone
 
@@ -356,7 +356,7 @@ def resnet18_mnist(num_classes: int) -> ResNet:
     Returns:
         ResNet network
     """
-    model = resnet18(progress=True)
+    model = tv_mod.resnet18()
     # Adapts the network to CIFAR10
     _adapt_network(ann=model, in_channels=1, num_classes=num_classes)
 
