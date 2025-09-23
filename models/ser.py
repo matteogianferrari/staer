@@ -48,8 +48,6 @@ class SEr(ContinualModel):
         """
 
         real_batch_size = inputs.shape[0]
-        #print(type(self.buffer_transform), self.buffer_transform)
-        # print(f"input.shape: {inputs.shape}")
 
         self.opt.zero_grad()
         if not self.buffer.is_empty():
@@ -62,7 +60,6 @@ class SEr(ContinualModel):
 
         # The inputs are transposed to the shape [T, B, C, H, W] for compatibility
         inputs = inputs.transpose(0, 1).contiguous()
-        # print(f"input.shape: {inputs.shape}")
 
         outputs = self.net(inputs)
         loss = self.loss(outputs, labels)
