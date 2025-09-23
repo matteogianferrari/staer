@@ -9,6 +9,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.functional import avg_pool2d, relu
+from torchvision.models import resnet18
 
 from backbone import MammothBackbone, register_backbone
 
@@ -326,3 +327,37 @@ def resnet18_spr(num_classes: int) -> ResNet:
     """
 
     return ResNet(BasicBlock, [2, 2, 2, 2], num_classes, 64, initial_conv_k=7)  # spr uses 7x7 conv even for 32x32 images
+
+
+def _adapt_network(ann: nn.Module, in_channels: int, num_classes: int) -> None:
+    # Adapts the stem layer of the architecture to CIFAR10
+    ann.conv1 = nn.Conv2d(
+        in_channels=in_channels,
+        out_channels=64,
+        kernel_size=3,
+        stride=1,
+        padding=1,
+        bias=False
+    )
+    ann.maxpool = nn.Identity()
+
+    # Adapts the FC layer for classification
+    ann.fc = nn.Linear(in_features=ann.fc.in_features, out_features=num_classes, bias=False)
+
+
+@register_backbone("resnet18-mnist")
+def resnet18_mnist(num_classes: int) -> ResNet:
+    """
+    Instantiates a ResNet18 network as used in the original `SPR <https://arxiv.org/abs/2110.07735>`_ paper.
+
+    Args:
+        num_classes: number of output classes
+
+    Returns:
+        ResNet network
+    """
+    model = resnet18(progress=True)
+    # Adapts the network to CIFAR10
+    _adapt_network(ann=model, in_channels=1, num_classes=num_classes)
+
+    return model

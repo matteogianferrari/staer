@@ -74,8 +74,9 @@ def evaluate(model: 'ContinualModel', dataset: 'ContinualDataset', last=False, r
             inputs, labels = data[0], data[1]
             inputs, labels = inputs.to(model.device), labels.to(model.device)
 
-            # Transpose input to tensor shape [T, B, C, H, W] for compatibility
-            inputs = inputs.transpose(0, 1).contiguous()
+            if inputs.dim() == 5:
+                # Transpose input to tensor shape [T, B, C, H, W] for compatibility
+                inputs = inputs.transpose(0, 1).contiguous()
 
             if 'class-il' not in model.COMPATIBILITY and 'general-continual' not in model.COMPATIBILITY:
                 outputs = model(inputs, k)
