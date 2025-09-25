@@ -56,7 +56,7 @@ class Tser(ContinualModel):
         self.tsce_loss = TSCELoss(tau=self.tau)
         self.tskl_loss = TSKLLoss(tau=self.tau)
         self.e_reg = EntropyReg(tau=self.tau)
-        self.mse_loss = TSMSELoss()
+
         self.buffer_transform = transforms.Compose([
             dataset.get_transform(),
             StaticEncoding(T=self.T)
@@ -77,8 +77,8 @@ class Tser(ContinualModel):
 
         # TSCE loss
         # Can be always computed, even when the buffer is empty
-        # loss = (1 - self.alpha) * self.tsce_loss(s_logits=s_logits, targets=labels)
-        loss = self.tsce_loss(s_logits=s_logits, targets=labels)
+        loss = (1 - self.alpha) * self.tsce_loss(s_logits=s_logits, targets=labels)
+        # loss = self.tsce_loss(s_logits=s_logits, targets=labels)
 
         if not self.buffer.is_empty():
             buf_x1, _, buf_y1 = self.buffer.get_data(
@@ -93,11 +93,12 @@ class Tser(ContinualModel):
             # print(f"buf_outputs.shape: {buf_outputs.shape}")
             # TSKL loss
             # Can be computed only when the buffer is not empty
-            # tskl_loss = self.alpha * (self.tau ** 2) * self.tskl_loss(t_logits=buf_logits, s_logits=buf_outputs)
-            # loss += tskl_loss
+            loss_tskl = self.alpha * (self.tau ** 2) * self.tskl_loss(t_logits=buf_y1, s_logits=buf_out1)
+            loss += loss_tskl
+
             # TSMSE loss
-            loss_tsmse = self.alpha * self.mse_loss(t_logits=buf_y1, s_logits=buf_out1)
-            loss += loss_tsmse
+            # loss_tsmse = self.alpha * self.mse_loss(t_logits=buf_y1, s_logits=buf_out1)
+            # loss += loss_tsmse
 
             buf_x2, buf_y2, _ = self.buffer.get_data(
                 self.args.minibatch_size, transform=self.buffer_transform, device=self.device
