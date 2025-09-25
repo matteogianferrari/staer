@@ -100,6 +100,12 @@ class Tser(ContinualModel):
             # loss_tsmse = self.alpha * self.mse_loss(t_logits=buf_y1, s_logits=buf_out1)
             # loss += loss_tsmse
 
+            # ER
+            # The entropy regularizer should be applied over the logits of the current model but for the past examples
+            # in the buffer
+            loss_er = self.gamma * self.e_reg(s_logits=buf_out1)
+            loss -= loss_er
+
             buf_x2, buf_y2, _ = self.buffer.get_data(
                 self.args.minibatch_size, transform=self.buffer_transform, device=self.device
             )
@@ -109,11 +115,6 @@ class Tser(ContinualModel):
             buf_out2 = self.net(buf_x2)
             loss_tsce_buf = self.args.theta * self.tsce_loss(s_logits=buf_out2, targets=buf_y2)
             loss += loss_tsce_buf
-
-        # ER
-        # Can be always computed, even when the buffer is empty
-        loss_er = self.gamma * self.e_reg(s_logits=s_logits)
-        loss -= loss_er
 
         loss.backward()
         self.opt.step()
