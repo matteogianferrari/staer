@@ -73,8 +73,8 @@ class Tser(ContinualModel):
 
         # TSCE loss
         # Can be always computed, even when the buffer is empty
-        # loss = (1 - self.alpha) * self.tsce_loss(s_logits=s_logits, targets=labels)
-        loss = self.tsce_loss(s_logits=s_logits, targets=labels)
+        loss = (1 - self.alpha) * self.tsce_loss(s_logits=s_logits, targets=labels)
+        # loss = self.tsce_loss(s_logits=s_logits, targets=labels)
 
         if not self.buffer.is_empty():
             buf_inputs, buf_logits = self.buffer.get_data(
