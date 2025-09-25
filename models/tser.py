@@ -5,7 +5,7 @@ from models.utils.continual_model import ContinualModel
 from utils.args import add_rehearsal_args, ArgumentParser
 from utils.buffer import Buffer
 from datasets.transforms.static_encoding import StaticEncoding
-from models.spiking_er.losses import TSCELoss, TSKLLoss, EntropyReg, TSMSELoss
+from models.spiking_er.losses import TSCELoss, TSKLLoss, EntropyReg
 
 
 class Tser(ContinualModel):
@@ -52,7 +52,7 @@ class Tser(ContinualModel):
         self.tsce_loss = TSCELoss(tau=self.tau)
         self.tskl_loss = TSKLLoss(tau=self.tau)
         self.e_reg = EntropyReg(tau=self.tau)
-        self.mse_loss = TSMSELoss()
+
         self.buffer_transform = transforms.Compose([
             dataset.get_transform(),
             StaticEncoding(T=self.T)
@@ -73,8 +73,8 @@ class Tser(ContinualModel):
 
         # TSCE loss
         # Can be always computed, even when the buffer is empty
-        loss = (1 - self.alpha) * self.tsce_loss(s_logits=s_logits, targets=labels)
-        # loss = self.tsce_loss(s_logits=s_logits, targets=labels)
+        # loss = (1 - self.alpha) * self.tsce_loss(s_logits=s_logits, targets=labels)
+        loss = self.tsce_loss(s_logits=s_logits, targets=labels)
 
         if not self.buffer.is_empty():
             buf_inputs, buf_logits = self.buffer.get_data(
