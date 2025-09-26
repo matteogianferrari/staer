@@ -99,8 +99,8 @@ class Tser(ContinualModel):
             # ER
             # The entropy regularizer should be applied over the logits of the current model but for the past examples in
             # the buffer
-            loss_er = self.gamma * self.e_reg(s_logits=buf_outputs)
-            loss -= loss_er
+            # loss_er = self.gamma * self.e_reg(s_logits=buf_outputs)
+            # loss -= loss_er
 
         loss.backward()
         self.opt.step()

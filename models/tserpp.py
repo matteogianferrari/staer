@@ -96,15 +96,11 @@ class Tser(ContinualModel):
             loss_tskl = self.alpha * (self.tau ** 2) * self.tskl_loss(t_logits=buf_y1, s_logits=buf_out1)
             loss += loss_tskl
 
-            # TSMSE loss
-            # loss_tsmse = self.alpha * self.mse_loss(t_logits=buf_y1, s_logits=buf_out1)
-            # loss += loss_tsmse
-
             # ER
             # The entropy regularizer should be applied over the logits of the current model but for the past examples
             # in the buffer
-            loss_er = self.gamma * self.e_reg(s_logits=buf_out1)
-            loss -= loss_er
+            # loss_er = self.gamma * self.e_reg(s_logits=buf_out1)
+            # loss -= loss_er
 
             buf_x2, buf_y2, _ = self.buffer.get_data(
                 self.args.minibatch_size, transform=self.buffer_transform, device=self.device
