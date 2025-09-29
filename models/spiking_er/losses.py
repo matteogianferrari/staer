@@ -67,24 +67,14 @@ class TSCELoss(nn.Module):
 
 
 class CELoss(nn.Module):
-    def __init__(self, tau: float = 1.0) -> None:
-        """Initializes the TSCELoss.
-
-        Args:
-            tau: Temperature parameter for softening of logits.
+    def __init__(self) -> None:
+        """Initializes the CELoss.
         """
         super(CELoss, self).__init__()
 
-        self.tau = tau
-
     def forward(self, s_logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
-        # Retrieves the shape of the student logits
-        T, B, K = s_logits.shape
-
+        # Averages the logits over the time dimension T
         avg_logits = s_logits.mean(dim=0)
-
-        # Scales the logits by the temperature, avg_logits.shape: [B, K]
-        avg_logits = avg_logits / self.tau
 
         # Computes the CE loss over B
         loss_val = F.cross_entropy(avg_logits, targets, reduction='mean')

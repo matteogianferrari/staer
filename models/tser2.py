@@ -26,13 +26,10 @@ class Tser2(ContinualModel):
                             help='Time steps for SNNs. Select between [1, 2, 4].')
 
         parser.add_argument('--tau', type=int, default=6,
-                            help='Hyperparameter that regulates the temperature of the softmax.')
+                            help='Hyperparameter that regulates the temperature of the softmax in the KL.')
 
         parser.add_argument('--alpha', type=float, default=1e-1,
                             help='Hyperparameter that balances the 2 terms of the loss.')
-
-        parser.add_argument('--gamma', type=float, default=1e-3,
-                            help='Hyperparameter that weights the regularization term.')
 
         return parser
 
@@ -47,9 +44,8 @@ class Tser2(ContinualModel):
         self.T = args.T
         self.tau = args.tau
         self.alpha = args.alpha
-        self.gamma = args.gamma
 
-        self.ce_loss = CELoss(tau=self.tau)
+        self.ce_loss = CELoss()
         self.tskl_loss = TSKLLoss(tau=self.tau)
 
         self.buffer_transform = transforms.Compose([
@@ -84,7 +80,7 @@ class Tser2(ContinualModel):
             buf_logits = buf_logits.transpose(0, 1).contiguous()
 
             buf_outputs = self.net(buf_inputs)
-            # print(f"buf_outputs.shape: {buf_outputs.shape}")
+
             # TSKL loss
             # Can be computed only when the buffer is not empty
             loss_tskl = self.alpha * (self.tau ** 2) * self.tskl_loss(t_logits=buf_logits, s_logits=buf_outputs)
