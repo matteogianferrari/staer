@@ -5,7 +5,7 @@ from models.utils.continual_model import ContinualModel
 from utils.args import add_rehearsal_args, ArgumentParser
 from utils.buffer import Buffer
 from datasets.transforms.static_encoding import StaticEncoding
-from models.spiking_er.losses import TSCELoss, TSKLLoss, EntropyReg
+from models.spiking_er.losses import TSCELoss, TSKLLoss
 
 
 class Tser(ContinualModel):
@@ -26,13 +26,10 @@ class Tser(ContinualModel):
                             help='Time steps for SNNs. Select between [1, 2, 4].')
 
         parser.add_argument('--tau', type=int, default=6,
-                            help='Hyperparameter that regulates the temperature of the softmax.')
+                            help='Hyperparameter that regulates the temperature of the softmax in KL.')
 
         parser.add_argument('--alpha', type=float, default=1e-1,
                             help='Hyperparameter that balances the 2 terms of the loss.')
-
-        parser.add_argument('--gamma', type=float, default=1e-3,
-                            help='Hyperparameter that weights the regularization term.')
 
         return parser
 
@@ -47,11 +44,9 @@ class Tser(ContinualModel):
         self.T = args.T
         self.tau = args.tau
         self.alpha = args.alpha
-        self.gamma = args.gamma
 
-        self.tsce_loss = TSCELoss(tau=self.tau)
+        self.tsce_loss = TSCELoss()
         self.tskl_loss = TSKLLoss(tau=self.tau)
-        self.e_reg = EntropyReg(tau=self.tau)
 
         self.buffer_transform = transforms.Compose([
             dataset.get_transform(),
@@ -74,7 +69,6 @@ class Tser(ContinualModel):
         # TSCE loss
         # Can be always computed, even when the buffer is empty
         loss = (1 - self.alpha) * self.tsce_loss(s_logits=s_logits, targets=labels)
-        # loss = self.tsce_loss(s_logits=s_logits, targets=labels)
 
         if not self.buffer.is_empty():
             buf_inputs, buf_logits = self.buffer.get_data(
@@ -91,16 +85,6 @@ class Tser(ContinualModel):
             # Can be computed only when the buffer is not empty
             loss_tskl = self.alpha * (self.tau ** 2) * self.tskl_loss(t_logits=buf_logits, s_logits=buf_outputs)
             loss += loss_tskl
-
-            # TSMSE loss
-            # loss_tsmse = self.alpha * self.mse_loss(t_logits=buf_logits, s_logits=buf_outputs)
-            # loss += loss_tsmse
-
-            # ER
-            # The entropy regularizer should be applied over the logits of the current model but for the past examples in
-            # the buffer
-            # loss_er = self.gamma * self.e_reg(s_logits=buf_outputs)
-            # loss -= loss_er
 
         loss.backward()
         self.opt.step()
