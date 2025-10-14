@@ -1,6 +1,6 @@
 import torch
 import torchvision.transforms as transforms
-from utils import binary_to_boolean_type
+
 from models.utils.continual_model import ContinualModel
 from utils.args import add_rehearsal_args, ArgumentParser
 from utils.buffer import Buffer
@@ -9,9 +9,9 @@ from models.spiking_er.losses import CELoss, TSKLLoss
 from models.spiking_er.soft_dtw_cuda import SoftDTW
 
 
-class Tserta(ContinualModel):
+class Tsertapp(ContinualModel):
     """Continual learning via Experience Replay for SNN with temporal alignment."""
-    NAME = 'tserta'
+    NAME = 'tsertapp'
     COMPATIBILITY = ['class-il', 'domain-il', 'task-il', 'general-continual']
 
     @staticmethod
@@ -38,8 +38,12 @@ class Tserta(ContinualModel):
         parser.add_argument('--sdtwgamma', type=float, default=1.0,
                             help='Native Hyperparameter of SDTW.')
 
-        parser.add_argument('--sdtwnorm', type=binary_to_boolean_type, default=1,
+        parser.add_argument('--sdtwnorm', type=bool, default=True,
                             help='Native Hyperparameter of SDTW on data normalization.')
+
+        parser.add_argument('--theta', type=float, default=0.5,
+                            help='Hyperparameter to balance CE for reharsal.')
+
 
         return parser
 
@@ -47,7 +51,7 @@ class Tserta(ContinualModel):
         """
         The TSER model maintains a buffer of previously seen examples and uses them to augment the current batch during training.
         """
-        super(Tserta, self).__init__(backbone, loss, args, transform, dataset=dataset)
+        super(Tsertapp, self).__init__(backbone, loss, args, transform, dataset=dataset)
 
         self.buffer = Buffer(self.args.buffer_size)
 
@@ -57,10 +61,11 @@ class Tserta(ContinualModel):
         self.beta = args.beta
         self.sdtwgamma = args.sdtwgamma
         self.sdtwnorm = args.sdtwnorm
+        self.theta = args.theta
 
         self.ce_loss = CELoss()
         self.tskl_loss = TSKLLoss(tau=self.tau)
-        self.sdtw_loss = SoftDTW(False,  gamma=self.sdtwgamma, normalize=self.sdtwnorm)
+        self.sdtw_loss = SoftDTW(False, gamma=self.sdtwgamma, normalize=self.sdtwnorm)
 
         self.buffer_transform = transforms.Compose([
             dataset.get_transform(),
@@ -85,7 +90,7 @@ class Tserta(ContinualModel):
         loss = (1 - self.alpha) * self.ce_loss(s_logits=s_logits, targets=labels)
 
         if not self.buffer.is_empty():
-            buf_inputs, buf_logits = self.buffer.get_data(
+            buf_inputs, _, buf_logits = self.buffer.get_data(
                 self.args.minibatch_size, transform=self.buffer_transform, device=self.device
             )
             
@@ -105,12 +110,22 @@ class Tserta(ContinualModel):
             # SDTW loss
             loss_dtw = self.beta * self.sdtw_loss(buf_outputs, buf_logits).sum()
             loss += loss_dtw         
+
+            buf_x2, buf_y2, _ = self.buffer.get_data(
+                self.args.minibatch_size, transform=self.buffer_transform, device=self.device
+            )
+
+            buf_x2 = buf_x2.transpose(0, 1).contiguous()
+
+            buf_out2 = self.net(buf_x2)
+            loss_tsce_buf = self.args.theta * self.ce_loss(s_logits=buf_out2, targets=buf_y2)
+            loss += loss_tsce_buf
             
             
 
         loss.backward()
         self.opt.step()
 
-        self.buffer.add_data(examples=not_aug_inputs, logits=s_logits.data)
+        self.buffer.add_data(examples=not_aug_inputs, labels=labels, logits=s_logits.data)
 
         return loss.item()
