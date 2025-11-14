@@ -6,7 +6,7 @@ from utils.args import add_rehearsal_args, ArgumentParser
 from utils.buffer import Buffer
 from datasets.transforms.static_encoding import StaticEncoding
 from models.spiking_er.losses import CELoss, TSKLLoss
-from models.spiking_er.soft_dtw_cuda import SoftDTW
+from models.spiking_er.soft_dtw import SoftDTW
 
 
 class Tserta(ContinualModel):
@@ -26,19 +26,19 @@ class Tserta(ContinualModel):
         parser.add_argument('--T', type=int, default=2, required=True,
                             help='Time steps for SNNs. Select between [1, 2, 4].')
 
-        parser.add_argument('--tau', type=int, default=6,
+        parser.add_argument('--tau', type=int, default=5,
                             help='Hyperparameter that regulates the temperature of the softmax in the KL.')
 
-        parser.add_argument('--alpha', type=float, default=1e-1,
+        parser.add_argument('--alpha', type=float, default=0.14,
                             help='Hyperparameter that balances the KL term of the loss.')
 
-        parser.add_argument('--beta', type=float, default=5e-1,
+        parser.add_argument('--beta', type=float, default=1e-4,
                             help='Hyperparameter that balances the SDTW term of the loss.')
 
-        parser.add_argument('--sdtwgamma', type=float, default=1.0,
+        parser.add_argument('--sdtw_gamma', type=float, default=1.0,
                             help='Native Hyperparameter of SDTW.')
 
-        parser.add_argument('--sdtwnorm', type=binary_to_boolean_type, default=1,
+        parser.add_argument('--sdtw_norm', type=binary_to_boolean_type, default=1,
                             help='Native Hyperparameter of SDTW on data normalization.')
 
         return parser
@@ -55,12 +55,12 @@ class Tserta(ContinualModel):
         self.tau = args.tau
         self.alpha = args.alpha
         self.beta = args.beta
-        self.sdtwgamma = args.sdtwgamma
-        self.sdtwnorm = args.sdtwnorm
+        self.sdtw_gamma = args.sdtw_gamma
+        self.sdtw_norm = args.sdtw_norm
 
         self.ce_loss = CELoss()
         self.tskl_loss = TSKLLoss(tau=self.tau)
-        self.sdtw_loss = SoftDTW(False,  gamma=self.sdtwgamma, normalize=self.sdtwnorm)
+        self.sdtw_loss = SoftDTW(gamma=self.sdtw_gamma, normalize=self.sdtw_norm)
 
         self.buffer_transform = transforms.Compose([
             dataset.get_transform(),
@@ -80,9 +80,11 @@ class Tserta(ContinualModel):
         s_logits = self.net(inputs)
         # print(f"s_logits.shape: {s_logits.shape}")
 
-        # TSCE loss
+        # CE loss
         # Can be always computed, even when the buffer is empty
-        loss = (1 - self.alpha) * self.ce_loss(s_logits=s_logits, targets=labels)
+        loss_ce_raw = self.ce_loss(s_logits=s_logits, targets=labels)
+        loss_ce = (1 - self.alpha) * loss_ce_raw
+        loss = loss_ce
 
         if not self.buffer.is_empty():
             buf_inputs, buf_logits = self.buffer.get_data(
@@ -91,22 +93,27 @@ class Tserta(ContinualModel):
             
             # The inputs are transposed to the shape [T, B, C, H, W] for compatibility
             buf_inputs = buf_inputs.transpose(0, 1).contiguous()
+            # The logits are transposed to the shape [T, B, K]
             buf_logits = buf_logits.transpose(0, 1).contiguous()
+
             buf_outputs = self.net(buf_inputs)
+            # print(f"buf shape: {buf_outputs.shape}")
 
             # TSKL loss
             # Can be computed only when the buffer is not empty
-            loss_tskl = self.alpha * (self.tau ** 2) * self.tskl_loss(t_logits=buf_logits, s_logits=buf_outputs)
+            loss_tskl_raw = self.tskl_loss(t_logits=buf_logits, s_logits=buf_outputs)
+            loss_tskl = self.alpha * (self.tau ** 2) * loss_tskl_raw
             loss += loss_tskl
 
-            # REtransposed to the shape [B, T, C, H, W] for compatibility w/ sdtw
-            buf_outputs = buf_outputs.transpose(0, 1).contiguous()
+            # Re-transpose to the shape [B, T, K] for compatibility with sdtw
             buf_logits = buf_logits.transpose(0, 1).contiguous()
+            # The logits are transposed to the shape [B, T, K]
+            buf_outputs = buf_outputs.transpose(0, 1).contiguous()
+
             # SDTW loss
-            loss_dtw = self.beta * self.sdtw_loss(buf_outputs, buf_logits).sum()
-            loss += loss_dtw         
-            
-            
+            loss_sdtw_raw = self.sdtw_loss(buf_outputs, buf_logits).sum()
+            loss_sdtw = self.beta * loss_sdtw_raw
+            loss += loss_sdtw
 
         loss.backward()
         self.opt.step()
