@@ -111,7 +111,7 @@ class Tserta(ContinualModel):
             buf_outputs = buf_outputs.transpose(0, 1).contiguous()
 
             # SDTW loss
-            loss_sdtw_raw = self.sdtw_loss(buf_outputs, buf_logits).sum()
+            loss_sdtw_raw = self.sdtw_loss(buf_outputs, buf_logits).mean(dim=0)
             loss_sdtw = self.beta * loss_sdtw_raw
             loss += loss_sdtw
 
