@@ -4,7 +4,7 @@ from models.utils.continual_model import ContinualModel
 from utils.args import add_rehearsal_args, ArgumentParser
 from utils.buffer import Buffer
 from datasets.transforms.static_encoding import StaticEncoding
-from models.spiking_er.losses import CELoss, TSKLLoss
+from models.spiking_er.losses import TSCELoss, TSKLLoss
 from models.spiking_er.soft_dtw import SoftDTW
 
 
@@ -17,7 +17,6 @@ class Tsertapp(ContinualModel):
     def get_parser(parser) -> ArgumentParser:
         """
         Returns an ArgumentParser object with predefined arguments for the SER model.
-
         This model requires the `add_rehearsal_args` to include the buffer-related arguments.
         """
         add_rehearsal_args(parser)
@@ -61,7 +60,7 @@ class Tsertapp(ContinualModel):
         self.sdtw_norm = args.sdtw_norm
         self.theta = args.theta
 
-        self.ce_loss = CELoss()
+        self.tsce_loss = TSCELoss()
         self.tskl_loss = TSKLLoss(tau=self.tau)
         self.sdtw_loss = SoftDTW(gamma=self.sdtw_gamma, normalize=self.sdtw_norm)
 
@@ -83,11 +82,10 @@ class Tsertapp(ContinualModel):
         s_logits = self.net(inputs)
         # print(f"s_logits.shape: {s_logits.shape}")
 
-        # CE loss
+        # TSCE loss
         # Can be always computed, even when the buffer is empty
-        loss_ce_raw = self.ce_loss(s_logits=s_logits, targets=labels)
-        loss_ce = (1 - self.alpha) * loss_ce_raw
-        loss = loss_ce
+        loss_tsce_raw = self.tsce_loss(s_logits=s_logits, targets=labels)
+        loss = loss_tsce_raw
 
         if not self.buffer.is_empty():
             buf_inputs, _, buf_logits = self.buffer.get_data(
@@ -113,7 +111,7 @@ class Tsertapp(ContinualModel):
             buf_outputs = buf_outputs.transpose(0, 1).contiguous()
 
             # SDTW loss
-            loss_sdtw_raw = self.sdtw_loss(buf_outputs, buf_logits).sum()
+            loss_sdtw_raw = self.sdtw_loss(buf_outputs, buf_logits).mean(dim=0)
             loss_sdtw = self.beta * loss_sdtw_raw
             loss += loss_sdtw
 
@@ -124,11 +122,47 @@ class Tsertapp(ContinualModel):
             buf_x2 = buf_x2.transpose(0, 1).contiguous()
 
             buf_out2 = self.net(buf_x2)
-            loss_ce_buf_raw = self.ce_loss(s_logits=buf_out2, targets=buf_y2)
-            loss_ce_buf = self.args.theta * loss_ce_buf_raw
-            loss += loss_ce_buf
+            loss_tsce_buf_raw = self.tsce_loss(s_logits=buf_out2, targets=buf_y2)
+            loss_tsce_buf = self.args.theta * loss_tsce_buf_raw
+            loss += loss_tsce_buf
 
-        loss.backward()
+        loss.backward(retain_graph=True)
+
+        # if not self.buffer.is_empty():
+        #     shared_params = [p for p in self.net.parameters() if p.requires_grad]
+        #
+        #     # loss1 gradients
+        #     g1 = torch.autograd.grad(
+        #         loss_tsce_raw, shared_params,
+        #         retain_graph=True, create_graph=False
+        #     )
+        #
+        #     # loss2 gradients
+        #     g2 = torch.autograd.grad(
+        #         loss_tskl_raw, shared_params,
+        #         retain_graph=True, create_graph=False
+        #     )
+        #     # loss3 gradients
+        #     g3 = torch.autograd.grad(
+        #         loss_sdtw_raw, shared_params,
+        #         retain_graph=True, create_graph=False
+        #     )
+        #
+        #     g4 = torch.autograd.grad(
+        #         loss_tsce_buf_raw, shared_params,
+        #         retain_graph=True, create_graph=False
+        #     )
+        #
+        #     # Compute gradient norm for each loss term (over all shared params)
+        #     g1_norm = torch.sqrt(sum((gi.norm() ** 2 for gi in g1))).item()
+        #     g2_norm = torch.sqrt(sum((gi.norm() ** 2 for gi in g2))).item()
+        #     g3_norm = torch.sqrt(sum((gi.norm() ** 2 for gi in g3))).item()
+        #     g4_norm = torch.sqrt(sum((gi.norm() ** 2 for gi in g4))).item()
+        #
+        #     with open("grad_norm.txt", "a", encoding="utf-8") as f:
+        #         f.write(f"{g1_norm};{g2_norm}; {g3_norm}; {g4_norm}\n")
+
+
         self.opt.step()
 
         self.buffer.add_data(examples=not_aug_inputs, labels=labels, logits=s_logits.data)
