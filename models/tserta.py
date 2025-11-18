@@ -5,7 +5,7 @@ from models.utils.continual_model import ContinualModel
 from utils.args import add_rehearsal_args, ArgumentParser
 from utils.buffer import Buffer
 from datasets.transforms.static_encoding import StaticEncoding
-from models.spiking_er.losses import CELoss, TSKLLoss
+from models.spiking_er.losses import TSCELoss, TSKLLoss
 from models.spiking_er.soft_dtw import SoftDTW
 
 
@@ -58,7 +58,7 @@ class Tserta(ContinualModel):
         self.sdtw_gamma = args.sdtw_gamma
         self.sdtw_norm = args.sdtw_norm
 
-        self.ce_loss = CELoss()
+        self.tsce_loss = TSCELoss()
         self.tskl_loss = TSKLLoss(tau=self.tau)
         self.sdtw_loss = SoftDTW(gamma=self.sdtw_gamma, normalize=self.sdtw_norm)
 
@@ -82,9 +82,9 @@ class Tserta(ContinualModel):
 
         # CE loss
         # Can be always computed, even when the buffer is empty
-        loss_ce_raw = self.ce_loss(s_logits=s_logits, targets=labels)
-        loss_ce = (1 - self.alpha) * loss_ce_raw
-        loss = loss_ce
+        loss_tsce_raw = self.tsce_loss(s_logits=s_logits, targets=labels)
+        loss_tsce = (1 - self.alpha) * loss_tsce_raw
+        loss = loss_tsce
 
         if not self.buffer.is_empty():
             buf_inputs, buf_logits = self.buffer.get_data(
