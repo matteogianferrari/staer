@@ -25,7 +25,7 @@ class Tser(ContinualModel):
         parser.add_argument('--T', type=int, default=2, required=True,
                             help='Time steps for SNNs. Select between [1, 2, 4].')
 
-        parser.add_argument('--tau', type=int, default=6,
+        parser.add_argument('--tau', type=int, default=5,
                             help='Hyperparameter that regulates the temperature of the softmax in KL.')
 
         parser.add_argument('--alpha', type=float, default=1e-1,
@@ -68,7 +68,8 @@ class Tser(ContinualModel):
 
         # TSCE loss
         # Can be always computed, even when the buffer is empty
-        loss = (1 - self.alpha) * self.tsce_loss(s_logits=s_logits, targets=labels)
+        loss_tsce_raw = self.tsce_loss(s_logits=s_logits, targets=labels)
+        loss = loss_tsce_raw
 
         if not self.buffer.is_empty():
             buf_inputs, buf_logits = self.buffer.get_data(
@@ -81,12 +82,38 @@ class Tser(ContinualModel):
 
             buf_outputs = self.net(buf_inputs)
             # print(f"buf_outputs.shape: {buf_outputs.shape}")
+
             # TSKL loss
             # Can be computed only when the buffer is not empty
-            loss_tskl = self.alpha * (self.tau ** 2) * self.tskl_loss(t_logits=buf_logits, s_logits=buf_outputs)
+            loss_tskl_raw = self.tskl_loss(t_logits=buf_logits, s_logits=buf_outputs)
+            loss_tskl = self.alpha * (self.tau ** 2) * loss_tskl_raw
             loss += loss_tskl
 
         loss.backward()
+
+        # loss.backward(retain_graph=True)
+        # if not self.buffer.is_empty():
+        #     shared_params = [p for p in self.net.parameters() if p.requires_grad]
+        #
+        #     # loss1 gradients
+        #     g1 = torch.autograd.grad(
+        #         loss_tsce_raw, shared_params,
+        #         retain_graph=True, create_graph=False
+        #     )
+        #
+        #     # loss2 gradients
+        #     g2 = torch.autograd.grad(
+        #         loss_tskl_raw, shared_params,
+        #         retain_graph=True, create_graph=False
+        #     )
+        #
+        #     # Compute gradient norm for each loss term (over all shared params)
+        #     g1_norm = torch.sqrt(sum((gi.norm() ** 2 for gi in g1))).item()
+        #     g2_norm = torch.sqrt(sum((gi.norm() ** 2 for gi in g2))).item()
+        #
+        #     with open("grad_norm_tser.txt", "a", encoding="utf-8") as f:
+        #         f.write(f"{g1_norm};{g2_norm}\n")
+
         self.opt.step()
 
         self.buffer.add_data(examples=not_aug_inputs, logits=s_logits.data)
