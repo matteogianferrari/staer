@@ -72,7 +72,7 @@ class Tser(ContinualModel):
 
         # TSCE loss
         # Can be always computed, even when the buffer is empty
-        loss = (1 - self.alpha) * self.tsce_loss(s_logits=s_logits, targets=labels)
+        loss_tsce_raw = self.tsce_loss(s_logits=s_logits, targets=labels)
 
         if not self.buffer.is_empty():
             buf_x1, _, buf_y1 = self.buffer.get_data(
@@ -85,10 +85,11 @@ class Tser(ContinualModel):
 
             buf_out1 = self.net(buf_x1)
             # print(f"buf_outputs.shape: {buf_outputs.shape}")
+
             # TSKL loss
             # Can be computed only when the buffer is not empty
-            loss_tskl = self.alpha * (self.tau ** 2) * self.tskl_loss(t_logits=buf_y1, s_logits=buf_out1)
-            loss += loss_tskl
+            loss_tskl_raw = self.tskl_loss(t_logits=buf_y1, s_logits=buf_out1)
+            loss_tskl = self.alpha * (self.tau ** 2) * loss_tskl_raw
 
             buf_x2, buf_y2, _ = self.buffer.get_data(
                 self.args.minibatch_size, transform=self.buffer_transform, device=self.device
@@ -97,10 +98,45 @@ class Tser(ContinualModel):
             buf_x2 = buf_x2.transpose(0, 1).contiguous()
 
             buf_out2 = self.net(buf_x2)
-            loss_tsce_buf = self.args.theta * self.tsce_loss(s_logits=buf_out2, targets=buf_y2)
-            loss += loss_tsce_buf
+            loss_tsce_buf_raw = self.tsce_loss(s_logits=buf_out2, targets=buf_y2)
+            loss_tsce_buf = self.args.theta * loss_tsce_buf_raw
+
+            loss = loss_tsce_raw + loss_tskl + loss_tsce_buf
+        else:
+            loss = loss_tsce_raw
 
         loss.backward()
+
+        # loss.backward(retain_graph=True)
+        # if not self.buffer.is_empty():
+        #     shared_params = [p for p in self.net.parameters() if p.requires_grad]
+        #
+        #     # loss1 gradients
+        #     g1 = torch.autograd.grad(
+        #         loss_tsce_raw, shared_params,
+        #         retain_graph=True, create_graph=False
+        #     )
+        #
+        #     # loss2 gradients
+        #     g2 = torch.autograd.grad(
+        #         loss_tskl_raw, shared_params,
+        #         retain_graph=True, create_graph=False
+        #     )
+        #
+        #     # loss3 gradients
+        #     g3 = torch.autograd.grad(
+        #         loss_tsce_buf_raw, shared_params,
+        #         retain_graph=True, create_graph=False
+        #     )
+        #
+        #     # Compute gradient norm for each loss term (over all shared params)
+        #     g1_norm = torch.sqrt(sum((gi.norm() ** 2 for gi in g1))).item()
+        #     g2_norm = torch.sqrt(sum((gi.norm() ** 2 for gi in g2))).item()
+        #     g3_norm = torch.sqrt(sum((gi.norm() ** 2 for gi in g3))).item()
+        #
+        #     with open("grad_norm_tserpp.txt", "a", encoding="utf-8") as f:
+        #         f.write(f"{g1_norm};{g2_norm};{g3_norm}\n")
+
         self.opt.step()
 
         self.buffer.add_data(examples=not_aug_inputs, labels=labels, logits=s_logits.data)

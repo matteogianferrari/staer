@@ -177,9 +177,12 @@ def set_random_seed(seed: int) -> None:
     np.random.seed(seed)
     torch.manual_seed(seed)
     try:
+        torch.cuda.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
     except BaseException:
         logging.error('Could not set cuda seed.')
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 
 def worker_init_fn(worker_id, num_workers, seed, rank=1):
