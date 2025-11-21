@@ -4,13 +4,13 @@ from models.utils.continual_model import ContinualModel
 from utils.args import add_rehearsal_args, ArgumentParser
 from utils.buffer import Buffer
 from datasets.transforms.static_encoding import StaticEncoding
-from models.spiking_er.losses import TSCELoss, TSKLLoss
+from models.spiking_er.losses import CELoss, TSKLLoss
 from models.spiking_er.soft_dtw import SoftDTW
 
 
-class Tsertapp(ContinualModel):
+class Tsaerpp(ContinualModel):
     """Continual learning via Experience Replay for SNN with temporal alignment."""
-    NAME = 'tsertapp'
+    NAME = 'tsaerpp'
     COMPATIBILITY = ['class-il', 'domain-il', 'task-il', 'general-continual']
 
     @staticmethod
@@ -48,7 +48,7 @@ class Tsertapp(ContinualModel):
         """
         The TSER model maintains a buffer of previously seen examples and uses them to augment the current batch during training.
         """
-        super(Tsertapp, self).__init__(backbone, loss, args, transform, dataset=dataset)
+        super(Tsaerpp, self).__init__(backbone, loss, args, transform, dataset=dataset)
 
         self.buffer = Buffer(self.args.buffer_size)
 
@@ -60,7 +60,7 @@ class Tsertapp(ContinualModel):
         self.sdtw_norm = args.sdtw_norm
         self.theta = args.theta
 
-        self.tsce_loss = TSCELoss()
+        self.ce_loss = CELoss()
         self.tskl_loss = TSKLLoss(tau=self.tau)
         self.sdtw_loss = SoftDTW(gamma=self.sdtw_gamma, normalize=self.sdtw_norm)
 
@@ -84,8 +84,7 @@ class Tsertapp(ContinualModel):
 
         # TSCE loss
         # Can be always computed, even when the buffer is empty
-        loss_tsce_raw = self.tsce_loss(s_logits=s_logits, targets=labels)
-        loss = loss_tsce_raw
+        loss_ce_raw = self.ce_loss(s_logits=s_logits, targets=labels)
 
         if not self.buffer.is_empty():
             buf_inputs, _, buf_logits = self.buffer.get_data(
@@ -103,7 +102,6 @@ class Tsertapp(ContinualModel):
             # Can be computed only when the buffer is not empty
             loss_tskl_raw = self.tskl_loss(t_logits=buf_logits, s_logits=buf_outputs)
             loss_tskl = self.alpha * (self.tau ** 2) * loss_tskl_raw
-            loss += loss_tskl
 
             # Re-transpose to the shape [B, T, K] for compatibility with sdtw
             buf_logits = buf_logits.transpose(0, 1).contiguous()
@@ -113,7 +111,6 @@ class Tsertapp(ContinualModel):
             # SDTW loss
             loss_sdtw_raw = self.sdtw_loss(buf_outputs, buf_logits).mean(dim=0)
             loss_sdtw = self.beta * loss_sdtw_raw
-            loss += loss_sdtw
 
             buf_x2, buf_y2, _ = self.buffer.get_data(
                 self.args.minibatch_size, transform=self.buffer_transform, device=self.device
@@ -122,18 +119,22 @@ class Tsertapp(ContinualModel):
             buf_x2 = buf_x2.transpose(0, 1).contiguous()
 
             buf_out2 = self.net(buf_x2)
-            loss_tsce_buf_raw = self.tsce_loss(s_logits=buf_out2, targets=buf_y2)
-            loss_tsce_buf = self.args.theta * loss_tsce_buf_raw
-            loss += loss_tsce_buf
+            loss_ce_buf_raw = self.ce_loss(s_logits=buf_out2, targets=buf_y2)
+            loss_ce_buf = self.args.theta * loss_ce_buf_raw
 
-        loss.backward(retain_graph=True)
+            loss = loss_ce_raw + loss_tskl + loss_sdtw + loss_ce_buf
+        else:
+            loss = loss_ce_raw
 
+        loss.backward()
+
+        # loss.backward(retain_graph=True)
         # if not self.buffer.is_empty():
         #     shared_params = [p for p in self.net.parameters() if p.requires_grad]
         #
         #     # loss1 gradients
         #     g1 = torch.autograd.grad(
-        #         loss_tsce_raw, shared_params,
+        #         loss_ce_raw, shared_params,
         #         retain_graph=True, create_graph=False
         #     )
         #
@@ -149,7 +150,7 @@ class Tsertapp(ContinualModel):
         #     )
         #
         #     g4 = torch.autograd.grad(
-        #         loss_tsce_buf_raw, shared_params,
+        #         loss_ce_buf_raw, shared_params,
         #         retain_graph=True, create_graph=False
         #     )
         #
