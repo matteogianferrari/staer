@@ -4,7 +4,7 @@ from models.utils.continual_model import ContinualModel
 from utils.args import add_rehearsal_args, ArgumentParser
 from utils.buffer import Buffer
 from datasets.transforms.static_encoding import StaticEncoding
-from models.spiking_er.losses import CELoss, TSKLLoss
+from models.spiking_er.losses import TSCELoss, TSKLLoss
 from models.spiking_er.soft_dtw import SoftDTW
 
 
@@ -60,7 +60,7 @@ class Tsaerpp(ContinualModel):
         self.sdtw_norm = args.sdtw_norm
         self.theta = args.theta
 
-        self.ce_loss = CELoss()
+        self.tsce_loss = TSCELoss()
         self.tskl_loss = TSKLLoss(tau=self.tau)
         self.sdtw_loss = SoftDTW(gamma=self.sdtw_gamma, normalize=self.sdtw_norm)
 
@@ -84,7 +84,7 @@ class Tsaerpp(ContinualModel):
 
         # TSCE loss
         # Can be always computed, even when the buffer is empty
-        loss_ce_raw = self.ce_loss(s_logits=s_logits, targets=labels)
+        loss_tsce_raw = self.tsce_loss(s_logits=s_logits, targets=labels)
 
         if not self.buffer.is_empty():
             buf_inputs, _, buf_logits = self.buffer.get_data(
@@ -119,12 +119,12 @@ class Tsaerpp(ContinualModel):
             buf_x2 = buf_x2.transpose(0, 1).contiguous()
 
             buf_out2 = self.net(buf_x2)
-            loss_ce_buf_raw = self.ce_loss(s_logits=buf_out2, targets=buf_y2)
-            loss_ce_buf = self.args.theta * loss_ce_buf_raw
+            loss_tsce_buf_raw = self.tsce_loss(s_logits=buf_out2, targets=buf_y2)
+            loss_tsce_buf = self.args.theta * loss_tsce_buf_raw
 
-            loss = loss_ce_raw + loss_tskl + loss_sdtw + loss_ce_buf
+            loss = loss_tsce_raw + loss_tskl + loss_sdtw + loss_tsce_buf
         else:
-            loss = loss_ce_raw
+            loss = loss_tsce_raw
 
         loss.backward()
 
