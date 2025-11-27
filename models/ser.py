@@ -5,6 +5,7 @@ from models.utils.continual_model import ContinualModel
 from utils.args import add_rehearsal_args, ArgumentParser
 from utils.buffer import Buffer
 from datasets.transforms.static_encoding import StaticEncoding
+from models.spiking_er.losses import TSCELoss, CELoss
 
 
 class SEr(ContinualModel):
@@ -24,6 +25,9 @@ class SEr(ContinualModel):
         parser.add_argument('--T', type=int, default=2, required=True,
                             help='Time steps for SNNs. Select between [1, 2, 4].')
 
+        parser.add_argument('--temp_sep', type=bool, default=1, required=True,
+                            help='Applies temporal separation to the CE.')
+
         return parser
 
     def __init__(self, backbone, loss, args, transform, dataset=None):
@@ -34,13 +38,17 @@ class SEr(ContinualModel):
 
         self.buffer = Buffer(self.args.buffer_size)
         self.T = args.T
+        self.temp_sep = args.temp_sep
 
-        # print(type(self.transform), self.transform)
+        if self.temp_sep:
+            self.ce_loss = TSCELoss()
+        else:
+            self.ce_loss = CELoss()
+
         self.buffer_transform = transforms.Compose([
             dataset.get_transform(),
             StaticEncoding(T=self.T)
         ])
-        # print(type(self.buffer_transform), self.buffer_transform)
 
     def observe(self, inputs, labels, not_aug_inputs, epoch=None):
         """
@@ -63,7 +71,12 @@ class SEr(ContinualModel):
 
         outputs = self.net(inputs)
 
-        loss = self.loss(outputs, labels)
+        if self.temp_sep:
+            tsce_loss = self.ce_loss(outputs, labels)
+            loss = tsce_loss
+        else:
+            ce_loss = self.ce_loss(outputs, labels)
+            loss = ce_loss
 
         loss.backward()
         self.opt.step()
