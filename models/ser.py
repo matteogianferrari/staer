@@ -25,8 +25,8 @@ class SEr(ContinualModel):
         parser.add_argument('--T', type=int, default=2, required=True,
                             help='Time steps for SNNs. Select between [1, 2, 4].')
 
-        parser.add_argument('--temp_sep', type=bool, default=1, required=True,
-                            help='Applies temporal separation to the CE.')
+        parser.add_argument('--temp_sep', type=int, default=1, required=True,
+                            help='Applies temporal separation to the CE [0 for CE or 1 for TSCE].')
 
         return parser
 
