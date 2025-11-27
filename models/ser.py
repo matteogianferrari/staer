@@ -62,7 +62,9 @@ class SEr(ContinualModel):
         inputs = inputs.transpose(0, 1).contiguous()
 
         outputs = self.net(inputs)
+
         loss = self.loss(outputs, labels)
+
         loss.backward()
         self.opt.step()
 

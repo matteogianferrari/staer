@@ -112,22 +112,11 @@ class Tser(ContinualModel):
         #     shared_params = [p for p in self.net.parameters() if p.requires_grad]
         #
         #     # loss1 gradients
-        #     g1 = torch.autograd.grad(
-        #         loss_tsce_raw, shared_params,
-        #         retain_graph=True, create_graph=False
-        #     )
-        #
+        #     g1 = torch.autograd.grad(loss_tsce_raw, shared_params, retain_graph=True, create_graph=False)
         #     # loss2 gradients
-        #     g2 = torch.autograd.grad(
-        #         loss_tskl_raw, shared_params,
-        #         retain_graph=True, create_graph=False
-        #     )
-        #
+        #     g2 = torch.autograd.grad(loss_tskl_raw, shared_params, retain_graph=True, create_graph=False)
         #     # loss3 gradients
-        #     g3 = torch.autograd.grad(
-        #         loss_tsce_buf_raw, shared_params,
-        #         retain_graph=True, create_graph=False
-        #     )
+        #     g3 = torch.autograd.grad(loss_tsce_buf_raw, shared_params, retain_graph=True, create_graph=False)
         #
         #     # Compute gradient norm for each loss term (over all shared params)
         #     g1_norm = torch.sqrt(sum((gi.norm() ** 2 for gi in g1))).item()
