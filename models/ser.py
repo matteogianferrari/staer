@@ -8,8 +8,8 @@ from datasets.transforms.static_encoding import StaticEncoding
 from models.spiking_er.losses import TSCELoss, CELoss
 
 
-class SEr(ContinualModel):
-    """Continual learning via Experience Replay for SNN."""
+class Ser(ContinualModel):
+    """Spiking Neural Networks with Experience Replay for Continual learning (SER)."""
     NAME = 'ser'
     COMPATIBILITY = ['class-il', 'domain-il', 'task-il', 'general-continual']
 
@@ -22,29 +22,40 @@ class SEr(ContinualModel):
         """
         add_rehearsal_args(parser)
 
-        parser.add_argument('--T', type=int, default=2, required=True,
-                            help='Time steps for SNNs. Select between [1, 2, 4].')
+        parser.add_argument(
+            '--T', type=int, default=2, required=True,
+            help='Temporal dimension for the SNN. Select between [1, 2, 4].'
+        )
 
-        parser.add_argument('--temp_sep', type=int, default=1, required=True,
-                            help='Applies temporal separation to the CE [0 for CE or 1 for TSCE].')
+        parser.add_argument(
+            '--temp_sep', type=int, default=1, required=True,
+            help='Applies temporal separation to the CE [0 for CE or 1 for TSCE].'
+        )
 
         return parser
 
     def __init__(self, backbone, loss, args, transform, dataset=None):
         """
-        The SER model maintains a buffer of previously seen examples and uses them to augment the current batch during training.
+        The SER model maintains a buffer of previously seen examples and uses
+        them to augment the current batch during training.
         """
-        super(SEr, self).__init__(backbone, loss, args, transform, dataset=dataset)
+        super(Ser, self).__init__(backbone, loss, args, transform, dataset=dataset)
 
-        self.buffer = Buffer(self.args.buffer_size)
+        # Model's specific args
+        # Temporal dimension
         self.T = args.T
+
+        # Temporal separation
         self.temp_sep = args.temp_sep
 
+        # Creates the loss with or without temporal separation based on the 'temp_sep' arg
         if self.temp_sep:
             self.ce_loss = TSCELoss()
         else:
             self.ce_loss = CELoss()
 
+        # Creates the buffer and its transforms
+        self.buffer = Buffer(self.args.buffer_size)
         self.buffer_transform = transforms.Compose([
             dataset.get_transform(),
             StaticEncoding(T=self.T)
@@ -54,33 +65,40 @@ class SEr(ContinualModel):
         """
         SER trains on the current task using the data provided, but also augments the batch with data from the buffer.
         """
-
-        real_batch_size = inputs.shape[0]
-
         self.opt.zero_grad()
+
+        B = inputs.shape[0]
+
+        # SER
         if not self.buffer.is_empty():
+            # Retrieves from the buffer a mini-batch of size 'minibatch_size' of data and their labels
+            # Applies the transforms to the data
             buf_inputs, buf_labels = self.buffer.get_data(
                 self.args.minibatch_size, transform=self.buffer_transform, device=self.device)
 
-            # print(f"buf_input.shape: {buf_inputs.shape}")
+            # Augments the current batch with the mini-batch of data from the buffer
             inputs = torch.cat((inputs, buf_inputs))
             labels = torch.cat((labels, buf_labels))
 
-        # The inputs are transposed to the shape [T, B, C, H, W] for compatibility
+        # The inputs are transposed to the shape [T, B, C, H, W] for compatibility with SNN model
         inputs = inputs.transpose(0, 1).contiguous()
 
-        outputs = self.net(inputs)
+        # The model processes the data
+        s_logits = self.net(inputs)
 
+        # CE loss computation with or without temporal separation based on the 'temp_sep' arg
         if self.temp_sep:
-            tsce_loss = self.ce_loss(outputs, labels)
-            loss = tsce_loss
+            tsce_loss_raw = self.ce_loss(s_logits, labels)
+            loss = tsce_loss_raw
         else:
-            ce_loss = self.ce_loss(outputs, labels)
-            loss = ce_loss
+            ce_loss_raw = self.ce_loss(s_logits, labels)
+            loss = ce_loss_raw
 
+        # Backprop
         loss.backward()
         self.opt.step()
 
-        self.buffer.add_data(examples=not_aug_inputs, labels=labels[:real_batch_size])
+        # Adds to the buffer the current non-augmented data and their labels
+        self.buffer.add_data(examples=not_aug_inputs, labels=labels[:B])
 
         return loss.item()
