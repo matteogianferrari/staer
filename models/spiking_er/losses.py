@@ -1,3 +1,4 @@
+import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -152,49 +153,40 @@ class TSKLLoss(nn.Module):
         return loss_val
 
 
-class TSMSELoss(nn.Module):
-    """Temporal Separation MSE (TSMSE) loss function.
+class KLLoss(nn.Module):
+    """Kullback–Leibler Divergence (KL) loss function."""
 
-    Legends:
-        T: Time steps.
-        B: Batch-size.
-        K: Number of classes.
-    """
-
-    def __init__(self) -> None:
-        """Initializes the TSKLLoss.
+    def __init__(self, tau: float = 1.0) -> None:
+        """Initializes the KLLoss.
 
         Args:
             tau: Temperature parameter for softening of logits.
         """
-        super(TSMSELoss, self).__init__()
+        super(KLLoss, self).__init__()
+        self.tau = tau
 
     def forward(self, t_logits: torch.Tensor, s_logits: torch.Tensor) -> torch.Tensor:
-        """Computes the TSMSE loss.
+        """Computes the KL loss.
 
         Args:
             t_logits: Tensor containing the teacher logits of shape [B, K].
             s_logits: Tensor containing the student logits of shape [T, B, K].
 
         Returns:
-            torch.Tensor: A scalar tensor containing the TSMSE loss value.
+            torch.Tensor: A scalar tensor containing the KL loss value.
         """
-        # Retrieves the shape of the student logits
+        # s_logits: [T, B, K]
         T, B, K = s_logits.shape
 
-        # Reshapes the student log probabilities to perform KL in a vectorized way, s_log_prob.shape: [T * B, K]
-        s_logits = s_logits.reshape(-1, K)
+        # Log-probs for student at each time step: [T, B, K]
+        s_log_prob = F.log_softmax(s_logits / self.tau, dim=-1)
 
-        # print(f"s_log_prob.shape: {s_log_prob.shape}")
-        # print(f"t_log_prob.shape: {t_log_prob.shape}")
-        if t_logits.dim() != 3:
-            # Repeats the teacher log probabilities to match the student log probabilities, t_log_prob.shape: [T * B, K]
-            t_logits = t_logits.repeat(T, 1)
-        else:
-            t_logits = t_logits.reshape(-1, K)
+        s_log_prob_mean = torch.logsumexp(s_log_prob, dim=0) - math.log(T)  # [B, K]
 
-        # Computes the KL divergence between the log probabilities and performs averaging
-        loss_val = F.mse_loss(s_logits, t_logits, reduction='mean')
+        # Teacher log-probs: [B, K]
+        t_log_prob = F.log_softmax(t_logits / self.tau, dim=-1)
+
+        loss_val = F.kl_div(input=s_log_prob_mean, target=t_log_prob, log_target=True, reduction='batchmean')
 
         return loss_val
 
