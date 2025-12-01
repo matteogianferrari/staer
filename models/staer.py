@@ -6,7 +6,8 @@ from utils.args import add_rehearsal_args, ArgumentParser
 from utils.buffer import Buffer
 from datasets.transforms.static_encoding import StaticEncoding
 from models.spiking_er.losses import TSCELoss, CELoss
-from models.spiking_er.soft_dtw import SoftDTW
+# from models.spiking_er.soft_dtw import SoftDTW
+from models.spiking_er.divergence import SoftDTWDivergence
 
 
 class Staer(ContinualModel):
@@ -88,7 +89,8 @@ class Staer(ContinualModel):
             self.ce_loss = CELoss()
 
         # Creates the Soft-DTW loss
-        self.sdtw_loss = SoftDTW(gamma=self.sdtw_gamma, normalize=self.sdtw_norm)
+        # self.sdtw_loss = SoftDTW(gamma=self.sdtw_gamma, normalize=self.sdtw_norm)
+        self.sdtw_loss = SoftDTWDivergence(gamma=self.sdtw_gamma, normalize=self.sdtw_norm)
 
         # Creates the buffer and its transforms
         self.buffer = Buffer(self.args.buffer_size)
@@ -169,8 +171,8 @@ class Staer(ContinualModel):
         # f.write(f"sdtw_logits:{sdtw_logits.shape}\n")
 
         # Temporal alignment with Soft-DTW
-        loss_sdtw_raw = 0
-        loss_sdtw = 0
+        sdtw_loss_raw = 0
+        sdtw_loss = 0
         if not self.sdtw_buffer.is_empty():
             # Retrieves from the buffer a mini-batch of size 'minibatch_size' of logits
             _, past_sdtw_logits = self.sdtw_buffer.get_data(self.args.minibatch_size, device=self.device)
@@ -183,8 +185,9 @@ class Staer(ContinualModel):
 
             if sdtw_logits.shape[0] == past_sdtw_logits.shape[0]:
                 # Soft-DTW loss computation between past logits and current logits
-                loss_sdtw_raw = self.sdtw_loss(sdtw_logits, past_sdtw_logits).mean(dim=0)
-                loss_sdtw = self.beta * loss_sdtw_raw
+                # sdtw_loss_raw = self.sdtw_loss(sdtw_logits, past_sdtw_logits).mean(dim=0)
+                sdtw_loss_raw = self.sdtw_loss(sdtw_logits, past_sdtw_logits)
+                sdtw_loss = self.beta * sdtw_loss_raw
 
             # f.write(f"sdtw_logits_pre:{sdtw_logits.shape}\n")
             # The current logits are transposed back to the shape [T, B, K]
@@ -192,13 +195,33 @@ class Staer(ContinualModel):
             # f.write(f"sdtw_logits:{sdtw_logits.shape}\n")
 
         if self.temp_sep:
-            loss = tsce_loss_raw + loss_sdtw
+            loss = tsce_loss_raw + sdtw_loss
         else:
-            loss = ce_loss_raw + loss_sdtw
+            loss = ce_loss_raw + sdtw_loss
 
         # Backprop
         loss.backward()
         self.opt.step()
+
+        # loss.backward(retain_graph=True)
+        # if not self.buffer.is_empty() and not self.sdtw_buffer.is_empty():
+        #     shared_params = [p for p in self.net.parameters() if p.requires_grad]
+        #
+        #     # loss1 gradients
+        #     if self.temp_sep:
+        #         g1 = torch.autograd.grad(tsce_loss_raw, shared_params, retain_graph=True, create_graph=False)
+        #     else:
+        #         g1 = torch.autograd.grad(ce_loss_raw, shared_params, retain_graph=True, create_graph=False)
+        #
+        #     # loss2 gradients
+        #     g2 = torch.autograd.grad(ce_loss_raw, shared_params, retain_graph=True, create_graph=False)
+        #
+        #     # Compute gradient norm for each loss term (over all shared params)
+        #     g1_norm = torch.sqrt(sum((gi.norm() ** 2 for gi in g1))).item()
+        #     g2_norm = torch.sqrt(sum((gi.norm() ** 2 for gi in g2))).item()
+        #
+        #     with open("grad_norm_staer.txt", "a", encoding="utf-8") as f:
+        #         f.write(f"{g1_norm};{g2_norm}\n")
 
         # Adds to the buffer the current non-augmented data and their labels
         self.buffer.add_data(examples=not_aug_inputs, labels=labels[:B])
