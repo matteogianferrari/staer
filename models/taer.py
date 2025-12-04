@@ -17,7 +17,7 @@ class Taer(ContinualModel):
     @staticmethod
     def get_parser(parser) -> ArgumentParser:
         """
-        Returns an ArgumentParser object with predefined arguments for the TSAER model.
+        Returns an ArgumentParser object with predefined arguments for the TAER model.
 
         This model requires the `add_rehearsal_args` to include the buffer-related arguments.
         """
@@ -102,7 +102,7 @@ class Taer(ContinualModel):
         # Creates the Soft-DTW loss
         self.sdtw_loss = SoftDTWDivergence(gamma=self.sdtw_gamma, normalize=self.sdtw_norm)
 
-        # Creates the TSKL loss
+        # Creates the KL loss
         self.kl_loss = KLLoss(tau=self.tau)
 
         # Creates the buffer and its transforms
@@ -136,7 +136,7 @@ class Taer(ContinualModel):
 
     def observe(self, inputs, labels, not_aug_inputs, epoch=None):
         """
-        STAER trains on the current task using the data provided, but also aligns the current logits with the
+        TAER trains on the current task using the data provided, but also aligns the current logits with the
         past logits using the Soft-DTW term.
         """
         self.opt.zero_grad()

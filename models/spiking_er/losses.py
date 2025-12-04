@@ -166,15 +166,6 @@ class KLLoss(nn.Module):
         self.tau = tau
 
     def forward(self, t_logits: torch.Tensor, s_logits: torch.Tensor) -> torch.Tensor:
-        """Computes the KL loss.
-
-        Args:
-            t_logits: Tensor containing the teacher logits of shape [B, K].
-            s_logits: Tensor containing the student logits of shape [T, B, K].
-
-        Returns:
-            torch.Tensor: A scalar tensor containing the KL loss value.
-        """
         # s_logits: [T, B, K]
         T, B, K = s_logits.shape
 
@@ -183,10 +174,12 @@ class KLLoss(nn.Module):
 
         s_log_prob_mean = torch.logsumexp(s_log_prob, dim=0) - math.log(T)  # [B, K]
 
-        # Teacher log-probs: [B, K]
+        # Log-probs for student at each time step: [T, B, K]
         t_log_prob = F.log_softmax(t_logits / self.tau, dim=-1)
 
-        loss_val = F.kl_div(input=s_log_prob_mean, target=t_log_prob, log_target=True, reduction='batchmean')
+        t_log_prob_mean = torch.logsumexp(t_log_prob, dim=0) - math.log(T)  # [B, K]
+
+        loss_val = F.kl_div(input=s_log_prob_mean, target=t_log_prob_mean, log_target=True, reduction='batchmean')
 
         return loss_val
 
