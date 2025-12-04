@@ -6,7 +6,6 @@ from utils.args import add_rehearsal_args, ArgumentParser
 from utils.buffer import Buffer
 from datasets.transforms.static_encoding import StaticEncoding
 from models.spiking_er.losses import TSCELoss, CELoss
-# from models.spiking_er.soft_dtw import SoftDTW
 from models.spiking_er.divergence import SoftDTWDivergence
 
 
@@ -62,7 +61,10 @@ class Staer(ContinualModel):
     def __init__(self, backbone, loss, args, transform, dataset=None):
         """
         The STAER model maintains a buffer of previously seen examples and
-        uses them to align the past logits (viewed as time-series) with the current logits, using the Soft-DTW.
+        uses them to align the past outputs (viewed as time-series, the output is generated with the old parameters
+        of the SNN w.r.t. the current training process) with the outputs of the SNN (viewed as time-series, the output
+        is generated using the same examples in the buffer, but using the updated parameters of the current SNN),
+        using the Soft-DTW.
         """
         super(Staer, self).__init__(backbone, loss, args, transform, dataset=dataset)
 
@@ -89,7 +91,6 @@ class Staer(ContinualModel):
             self.ce_loss = CELoss()
 
         # Creates the Soft-DTW loss
-        # self.sdtw_loss = SoftDTW(gamma=self.sdtw_gamma, normalize=self.sdtw_norm)
         self.sdtw_loss = SoftDTWDivergence(gamma=self.sdtw_gamma, normalize=self.sdtw_norm)
 
         # Creates the buffer and its transforms
@@ -102,20 +103,20 @@ class Staer(ContinualModel):
         # Creates the buffer for Soft-DTW logits
         self.sdtw_buffer = Buffer(self.args.buffer_size)
 
-    def _build_sdtw_logits(self, logits: torch.Tensor) -> torch.Tensor:
+    def _build_sdtw_logits(self, outputs: torch.Tensor) -> torch.Tensor:
         """
-        Interpolate 'logits' along the temporal dimension from T to sdtw_T.
+        Interpolate 'outputs' along the temporal dimension from T to sdtw_T.
         Works for logits shaped either [T, B, K].
         """
-        if logits.dim() != 3:
-            raise ValueError(f"Expected 3D logits, got shape {logits.shape}")
+        if outputs.dim() != 3:
+            raise ValueError(f"Expected 3D outputs, got shape {outputs.shape}")
 
         # 'same' case
         if self.sdtw_T == self.T:
-            return logits
+            return outputs
         else:
             # Changes the order from [T, B, K] to [B, K, T]
-            x = logits.permute(1, 2, 0)
+            x = outputs.permute(1, 2, 0)
             x = F.interpolate(x, size=self.sdtw_T, mode="linear", align_corners=False)
 
             # Changes the order from [B, K, T] to [T, B, K]
@@ -123,13 +124,15 @@ class Staer(ContinualModel):
 
     def observe(self, inputs, labels, not_aug_inputs, epoch=None):
         """
-        STAER trains on the current task using the data provided, but also aligns the current logits with the
-        past logits using the Soft-DTW term.
+        STAER trains on the current task using the data provided, but also aligns the output of the examples in the
+        buffer, using the current SNN, with the past outputs of the examples, generated using the old parameters
+        of the SNN, using the Soft-DTW term.
         """
         self.opt.zero_grad()
 
         B = inputs.shape[0]
         sdtw_inputs = inputs
+        sdtw_labels = labels
 
         # SER
         if not self.buffer.is_empty():
@@ -146,38 +149,38 @@ class Staer(ContinualModel):
         inputs = inputs.transpose(0, 1).contiguous()
 
         # The model processes the data
-        ser_logits = self.net(inputs)
+        outputs = self.net(inputs)
 
         # CE loss computation with or without temporal separation based on the 'temp_sep' arg
         if self.temp_sep:
-            tsce_loss_raw = self.ce_loss(ser_logits, labels)
+            tsce_loss_raw = self.ce_loss(outputs, labels)
         else:
-            ce_loss_raw = self.ce_loss(ser_logits, labels)
+            ce_loss_raw = self.ce_loss(outputs, labels)
 
         # The inputs are transposed to the shape [T, B, C, H, W] for compatibility with SNN model
         sdtw_inputs = sdtw_inputs.transpose(0, 1).contiguous()
 
         # Creates the logits for the Soft-DTW by interpolating the original temporal dimension
-        sdtw_logits = self.net(sdtw_inputs)
-        sdtw_logits = self._build_sdtw_logits(sdtw_logits)
+        sdtw_outputs = self.net(sdtw_inputs)
+        sdtw_outputs = self._build_sdtw_logits(sdtw_outputs)
 
         # Temporal alignment with Soft-DTW
         sdtw_loss_raw = 0
         sdtw_loss = 0
         if not self.sdtw_buffer.is_empty():
             # Retrieves from the buffer a mini-batch of size 'minibatch_size' of logits
-            _, past_sdtw_logits = self.sdtw_buffer.get_data(self.args.minibatch_size, device=self.device)
+            _, past_sdtw_outputs = self.sdtw_buffer.get_data(self.args.minibatch_size, device=self.device)
 
             # The current logits are transposed to the shape [B, T, K] for Soft-DTW compatibility
-            sdtw_logits = sdtw_logits.transpose(0, 1).contiguous()
+            sdtw_outputs = sdtw_outputs.transpose(0, 1).contiguous()
 
-            if sdtw_logits.shape[0] == past_sdtw_logits.shape[0]:
+            if sdtw_outputs.shape[0] == past_sdtw_outputs.shape[0]:
                 # Soft-DTW loss computation between past logits and current logits
-                sdtw_loss_raw = self.sdtw_loss(sdtw_logits, past_sdtw_logits)
+                sdtw_loss_raw = self.sdtw_loss(sdtw_outputs, past_sdtw_outputs)
                 sdtw_loss = self.beta * sdtw_loss_raw
 
             # The current logits are transposed back to the shape [T, B, K]
-            sdtw_logits = sdtw_logits.transpose(0, 1).contiguous()
+            sdtw_outputs = sdtw_outputs.transpose(0, 1).contiguous()
 
         if self.temp_sep:
             loss = tsce_loss_raw + sdtw_loss
@@ -192,6 +195,6 @@ class Staer(ContinualModel):
         self.buffer.add_data(examples=not_aug_inputs, labels=labels[:B])
 
         # Adds to the buffer the current non-augmented data and their logits for Soft-DTW
-        self.sdtw_buffer.add_data(examples=not_aug_inputs, logits=sdtw_logits.data)
+        self.sdtw_buffer.add_data(examples=not_aug_inputs, logits=sdtw_outputs.data, labels=sdtw_labels)
 
         return loss.item()

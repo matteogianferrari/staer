@@ -84,14 +84,14 @@ class Ser(ContinualModel):
         inputs = inputs.transpose(0, 1).contiguous()
 
         # The model processes the data
-        s_logits = self.net(inputs)
+        outputs = self.net(inputs)
 
         # CE loss computation with or without temporal separation based on the 'temp_sep' arg
         if self.temp_sep:
-            tsce_loss_raw = self.ce_loss(s_logits, labels)
+            tsce_loss_raw = self.ce_loss(outputs, labels)
             loss = tsce_loss_raw
         else:
-            ce_loss_raw = self.ce_loss(s_logits, labels)
+            ce_loss_raw = self.ce_loss(outputs, labels)
             loss = ce_loss_raw
 
         # Backprop
