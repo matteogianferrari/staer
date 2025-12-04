@@ -126,8 +126,6 @@ class Staer(ContinualModel):
         STAER trains on the current task using the data provided, but also aligns the current logits with the
         past logits using the Soft-DTW term.
         """
-        # with open("err_log.txt", "a", encoding="utf-8") as f:
-
         self.opt.zero_grad()
 
         B = inputs.shape[0]
@@ -144,14 +142,11 @@ class Staer(ContinualModel):
             inputs = torch.cat((inputs, buf_inputs))
             labels = torch.cat((labels, buf_labels))
 
-        # f.write(f"inputs_pre:{inputs.shape}\n")
         # The inputs are transposed to the shape [T, B, C, H, W] for compatibility with SNN model
         inputs = inputs.transpose(0, 1).contiguous()
-        # f.write(f"inputs:{inputs.shape}\n")
 
         # The model processes the data
         ser_logits = self.net(inputs)
-        # f.write(f"ser_logits:{ser_logits.shape}\n")
 
         # CE loss computation with or without temporal separation based on the 'temp_sep' arg
         if self.temp_sep:
@@ -159,16 +154,12 @@ class Staer(ContinualModel):
         else:
             ce_loss_raw = self.ce_loss(ser_logits, labels)
 
-        # f.write(f"sdtw_inputs_pre:{sdtw_inputs.shape}\n")
         # The inputs are transposed to the shape [T, B, C, H, W] for compatibility with SNN model
         sdtw_inputs = sdtw_inputs.transpose(0, 1).contiguous()
-        # f.write(f"sdtw_inputs:{sdtw_inputs.shape}\n")
 
         # Creates the logits for the Soft-DTW by interpolating the original temporal dimension
         sdtw_logits = self.net(sdtw_inputs)
-        # f.write(f"sdtw_logits_pre:{sdtw_logits.shape}\n")
         sdtw_logits = self._build_sdtw_logits(sdtw_logits)
-        # f.write(f"sdtw_logits:{sdtw_logits.shape}\n")
 
         # Temporal alignment with Soft-DTW
         sdtw_loss_raw = 0
@@ -177,22 +168,16 @@ class Staer(ContinualModel):
             # Retrieves from the buffer a mini-batch of size 'minibatch_size' of logits
             _, past_sdtw_logits = self.sdtw_buffer.get_data(self.args.minibatch_size, device=self.device)
 
-            # f.write(f"sdtw_logits_pre:{sdtw_logits.shape}\n")
             # The current logits are transposed to the shape [B, T, K] for Soft-DTW compatibility
             sdtw_logits = sdtw_logits.transpose(0, 1).contiguous()
-            # f.write(f"sdtw_logits:{sdtw_logits.shape}\n")
-            # f.write(f"past_sdtw_logits:{past_sdtw_logits.shape}\n")
 
             if sdtw_logits.shape[0] == past_sdtw_logits.shape[0]:
                 # Soft-DTW loss computation between past logits and current logits
-                # sdtw_loss_raw = self.sdtw_loss(sdtw_logits, past_sdtw_logits).mean(dim=0)
                 sdtw_loss_raw = self.sdtw_loss(sdtw_logits, past_sdtw_logits)
                 sdtw_loss = self.beta * sdtw_loss_raw
 
-            # f.write(f"sdtw_logits_pre:{sdtw_logits.shape}\n")
             # The current logits are transposed back to the shape [T, B, K]
             sdtw_logits = sdtw_logits.transpose(0, 1).contiguous()
-            # f.write(f"sdtw_logits:{sdtw_logits.shape}\n")
 
         if self.temp_sep:
             loss = tsce_loss_raw + sdtw_loss
@@ -202,26 +187,6 @@ class Staer(ContinualModel):
         # Backprop
         loss.backward()
         self.opt.step()
-
-        # loss.backward(retain_graph=True)
-        # if not self.buffer.is_empty() and not self.sdtw_buffer.is_empty():
-        #     shared_params = [p for p in self.net.parameters() if p.requires_grad]
-        #
-        #     # loss1 gradients
-        #     if self.temp_sep:
-        #         g1 = torch.autograd.grad(tsce_loss_raw, shared_params, retain_graph=True, create_graph=False)
-        #     else:
-        #         g1 = torch.autograd.grad(ce_loss_raw, shared_params, retain_graph=True, create_graph=False)
-        #
-        #     # loss2 gradients
-        #     g2 = torch.autograd.grad(ce_loss_raw, shared_params, retain_graph=True, create_graph=False)
-        #
-        #     # Compute gradient norm for each loss term (over all shared params)
-        #     g1_norm = torch.sqrt(sum((gi.norm() ** 2 for gi in g1))).item()
-        #     g2_norm = torch.sqrt(sum((gi.norm() ** 2 for gi in g2))).item()
-        #
-        #     with open("grad_norm_staer.txt", "a", encoding="utf-8") as f:
-        #         f.write(f"{g1_norm};{g2_norm}\n")
 
         # Adds to the buffer the current non-augmented data and their labels
         self.buffer.add_data(examples=not_aug_inputs, labels=labels[:B])
