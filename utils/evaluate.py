@@ -74,8 +74,9 @@ def evaluate(model: 'ContinualModel', dataset: 'ContinualDataset', last=False, r
             inputs, labels = data[0], data[1]
             inputs, labels = inputs.to(model.device), labels.to(model.device)
 
+            # SNN mod for Mammoth
             if inputs.dim() == 5:
-                # Transpose input to tensor shape [T, B, C, H, W] for compatibility
+                # Transpose input to tensor shape [T, B, C, H, W] for compatibility with SNN model
                 inputs = inputs.transpose(0, 1).contiguous()
 
             if 'class-il' not in model.COMPATIBILITY and 'general-continual' not in model.COMPATIBILITY:
@@ -90,7 +91,7 @@ def evaluate(model: 'ContinualModel', dataset: 'ContinualDataset', last=False, r
                 loss = loss_fn(outputs, labels)
                 avg_loss += loss.item()
 
-            # print(f"outputs.shape:{outputs.shape}")
+            # For the SNN, the output in eval mode is already averaged out inside the architecture
 
             _, pred = torch.max(outputs[:, :n_classes].data, 1)
             correct += torch.sum(pred == labels).item()

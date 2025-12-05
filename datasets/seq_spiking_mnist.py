@@ -5,13 +5,12 @@ import torchvision.transforms as transforms
 from torchvision.datasets import MNIST
 from PIL import Image
 from argparse import Namespace
-from datasets.utils.continual_dataset import (ContinualDataset, fix_class_names_order,
-                                              store_masked_loaders)
+from datasets.utils.continual_dataset import (ContinualDataset, fix_class_names_order, store_masked_loaders)
 from utils.conf import base_path
 from datasets.utils import set_default_from_args
 from datasets.transforms.static_encoding import StaticEncoding
 from datasets.seq_mnist import MyMNIST
-from models.spiking_er.losses import TSCELoss
+import torch.nn.functional as F
 
 
 class SeqSpikingMNIST(ContinualDataset):
@@ -69,7 +68,7 @@ class SeqSpikingMNIST(ContinualDataset):
 
     @staticmethod
     def get_loss():
-        return TSCELoss()
+        return F.cross_entropy
 
     @staticmethod
     def get_normalization_transform():

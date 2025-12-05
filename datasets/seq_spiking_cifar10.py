@@ -13,7 +13,7 @@ from datasets.utils.continual_dataset import (ContinualDataset, fix_class_names_
 from datasets.utils import set_default_from_args
 from datasets.transforms.static_encoding import StaticEncoding
 from datasets.seq_cifar10 import TCIFAR10, MyCIFAR10
-from models.spiking_er.losses import TSCELoss
+import torch.nn.functional as F
 
 
 class SeqSpikingCIFAR10(ContinualDataset):
@@ -102,7 +102,7 @@ class SeqSpikingCIFAR10(ContinualDataset):
 
     @staticmethod
     def get_loss():
-        return TSCELoss()
+        return F.cross_entropy
 
     @staticmethod
     def get_normalization_transform():

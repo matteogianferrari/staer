@@ -67,6 +67,9 @@ class Ser(ContinualModel):
         """
         self.opt.zero_grad()
 
+        # not_aug_inputs.shape: [B, C, H, W]
+        # inputs.shape: [B, T, C, H, W]
+        # labels: [B]
         B = inputs.shape[0]
 
         # SER
@@ -77,13 +80,17 @@ class Ser(ContinualModel):
                 self.args.minibatch_size, transform=self.buffer_transform, device=self.device)
 
             # Augments the current batch with the mini-batch of data from the buffer
+            # inputs.shape: [2B, T, C, H, W]
             inputs = torch.cat((inputs, buf_inputs))
+            # labels.shape: [2B]
             labels = torch.cat((labels, buf_labels))
 
         # The inputs are transposed to the shape [T, B, C, H, W] for compatibility with SNN model
+        # inputs.shape: [T, B, C, H, W] or [T, 2B, C, H, W]
         inputs = inputs.transpose(0, 1).contiguous()
 
         # The model processes the data
+        # outputs.shape: [T, B, K] or [T, 2B, K]
         outputs = self.net(inputs)
 
         # CE loss computation with or without temporal separation based on the 'temp_sep' arg
