@@ -110,61 +110,98 @@ class _SoftDTW(Function):
 
 
 class SoftDTWDivergence(nn.Module):
+    """Computes the Soft-DTW divergence.
+
+    This implementation supports batch processing.
+
+    Attributes:
+        gamma:
+        normalize:
+        reduction:
+    """
     def __init__(self, gamma: float = 1.0, reduction: str = "mean", normalize: bool = False) -> None:
+        """Initializes the SoftDTWDivergence.
+
+        Args:
+            gamma:
+            reduction:
+            normalize:
+        """
         super().__init__()
 
-        self.gamma = float(gamma)
+        # Attributes
+        self.gamma = gamma
+        self.normalize = normalize
 
         assert reduction in ("none", "mean", "sum")
         self.reduction = reduction
 
-        self.normalize = normalize
-
     @staticmethod
-    def _pairwise_sq_euclidean(A, B):
+    def _pairwise_sq_euclidean(A: torch.Tensor, B: torch.Tensor):
+        """Computes the squared Euclidean distance between A and B.
+
+        This function computes the per-batch pairwise squared Euclidean distances.
+
+        Args:
+            A: Tensor that represents a batch of time series with shape [B, T1, K].
+            B: Tensor that represents a batch of time series with shape [B, T1, K].
+
+        Returns:
+            A tensor representing the per-batch cost matrix with shape [B, T1, T2].
         """
-        Compute C(A, B)_{i,j} = 1/2 ||a_i - b_j||^2
-        A: (B, m, d)
-        B: (B, n, d)
-        returns: (B, m, n)
-        """
-        # Broadcast to (B, m, n, d)
+        # Broadcast the operation to [B, T1, T2, K]
         diff = A.unsqueeze(2) - B.unsqueeze(1)
-        return 0.5 * (diff * diff).sum(dim=-1)
 
-    def forward(self, X, Y):
+        # Performs the squared Euclidean distance
+        cost_matrix = 0.5 * (diff * diff).sum(dim=-1)
+
+        return cost_matrix
+
+    def forward(self, X: torch.Tensor, Y: torch.Tensor):
+        """Computes the per-batch Soft-DTW divergence between 2 batches of time series.
+
+        Args:
+             X: Tensor representing a batch of time series with shape [B, T1, K].
+             Y: Tensor representing a batch of time series with shape [B, T2, K].
+
+        Returns:
+            The
         """
-        X: (B, T_x, d)
-        Y: (B, T_y, d)
-        """
-        assert X.dim() == 3 and Y.dim() == 3, "X and Y must be (B, T, d)"
-        Bx, Tx, d1 = X.shape
-        By, Ty, d2 = Y.shape
+        # Sanity checks
+        assert X.dim() == 3 and Y.dim() == 3, "X and Y must be (B, T, K)"
+        Bx, Tx, Kx = X.shape
+        By, Ty, Ky = Y.shape
         assert Bx == By, "Batch sizes of X and Y must match"
-        assert d1 == d2, "Feature dimensions of X and Y must match"
+        assert Kx == Ky, "Feature dimensions of X and Y must match"
 
+        # Creates a tensor from gamma, the same dtype and on the same device of X
         gamma = X.new_tensor(self.gamma)
 
-        # C(X, Y)
-        C_xy = self._pairwise_sq_euclidean(X, Y)  # (B, Tx, Ty)
-        s_xy = _SoftDTW.apply(C_xy, gamma)  # (B,)
+        # Computes the cost matrix C between X and Y, tensor shape: [B, Tx, Ty]
+        C_xy = self._pairwise_sq_euclidean(X, Y)
 
-        # C(X, X)
-        C_xx = self._pairwise_sq_euclidean(X, X)  # (B, Tx, Tx)
+        s_xy = _SoftDTW.apply(C_xy, gamma)
+
+        # Computes the cost matrix C between X and X, tensor shape: [B, Tx, Tx]
+        C_xx = self._pairwise_sq_euclidean(X, X)
+
         s_xx = _SoftDTW.apply(C_xx, gamma)  # (B,)
 
-        # C(Y, Y)
-        C_yy = self._pairwise_sq_euclidean(Y, Y)  # (B, Ty, Ty)
+        # Computes the cost matrix C between Y and Y, tensor shape: [B, Ty, Ty]
+        C_yy = self._pairwise_sq_euclidean(Y, Y)
+
         s_yy = _SoftDTW.apply(C_yy, gamma)  # (B,)
 
-        # Soft-DTW divergence (Eq. in Section 3)
+        # Computes the Soft-DTW divergence
         D = s_xy - 0.5 * s_xx - 0.5 * s_yy  # (B,)
 
+        # Normalizes the results
         if self.normalize:
-            # simple length-based normalization (optional)
+            # simple length-based normalization
             mean_len = 0.5 * (Tx + Ty)
             D = D / mean_len
 
+        # Performs the reduction based on the argument
         if self.reduction == "mean":
             return D.mean()
         elif self.reduction == "sum":

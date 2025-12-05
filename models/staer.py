@@ -160,7 +160,8 @@ class Staer(ContinualModel):
         # The inputs are transposed to the shape [T, B, C, H, W] for compatibility with SNN model
         sdtw_inputs = sdtw_inputs.transpose(0, 1).contiguous()
 
-        # Creates the logits for the Soft-DTW by interpolating the original temporal dimension
+        # Creates the outputs for the Soft-DTW by interpolating the original temporal dimension
+        # sdtw_outputs.shape: [B, T, K]
         sdtw_outputs = self.net(sdtw_inputs)
         sdtw_outputs = self._build_sdtw_logits(sdtw_outputs)
 
@@ -169,18 +170,20 @@ class Staer(ContinualModel):
         sdtw_loss = 0
         if not self.sdtw_buffer.is_empty():
             # Retrieves from the buffer a mini-batch of size 'minibatch_size' of logits
-            _, past_sdtw_outputs = self.sdtw_buffer.get_data(self.args.minibatch_size, device=self.device)
+            sdtw_buf_inputs, past_sdtw_outputs = self.sdtw_buffer.get_data(
+                self.args.minibatch_size, transform=self.buffer_transform, device=self.device)
 
-            # The current logits are transposed to the shape [B, T, K] for Soft-DTW compatibility
-            sdtw_outputs = sdtw_outputs.transpose(0, 1).contiguous()
+            # The buffer examples are transposed to the shape [T, B, C, H, W] for compatibility
+            sdtw_buf_inputs = sdtw_buf_inputs.transpose(0, 1).contiguous()
 
-            if sdtw_outputs.shape[0] == past_sdtw_outputs.shape[0]:
-                # Soft-DTW loss computation between past logits and current logits
-                sdtw_loss_raw = self.sdtw_loss(sdtw_outputs, past_sdtw_outputs)
-                sdtw_loss = self.beta * sdtw_loss_raw
+            # Creates the outputs for the buffer examples using the updated parameters of the SNN
+            sdtw_buf_outputs = self.net(sdtw_buf_inputs)
+            sdtw_buf_outputs = self._build_sdtw_logits(sdtw_buf_outputs)
+            sdtw_buf_outputs = sdtw_buf_outputs.transpose(0, 1).contiguous()
 
-            # The current logits are transposed back to the shape [T, B, K]
-            sdtw_outputs = sdtw_outputs.transpose(0, 1).contiguous()
+            # Soft-DTW loss computation between past logits and current logits
+            sdtw_loss_raw = self.sdtw_loss(sdtw_buf_outputs, past_sdtw_outputs)
+            sdtw_loss = self.beta * sdtw_loss_raw
 
         if self.temp_sep:
             loss = tsce_loss_raw + sdtw_loss
@@ -195,6 +198,6 @@ class Staer(ContinualModel):
         self.buffer.add_data(examples=not_aug_inputs, labels=labels[:B])
 
         # Adds to the buffer the current non-augmented data and their logits for Soft-DTW
-        self.sdtw_buffer.add_data(examples=not_aug_inputs, logits=sdtw_outputs.data, labels=sdtw_labels)
+        self.sdtw_buffer.add_data(examples=not_aug_inputs, logits=sdtw_outputs.data)
 
         return loss.item()
