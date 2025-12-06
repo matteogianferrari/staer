@@ -460,10 +460,6 @@ class Buffer:
         Note:
             Only the examples are required. The other tensors are initialized only if they are provided.
         """
-        # SNN mod
-        if logits is not None and logits.dim() == 3:
-            logits = logits.transpose(0, 1).contiguous()
-
         if not hasattr(self, 'examples'):
             self.init_tensors(examples, labels, logits, task_labels, true_labels)
 

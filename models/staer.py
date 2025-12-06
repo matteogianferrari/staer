@@ -130,25 +130,35 @@ class Staer(ContinualModel):
         """
         self.opt.zero_grad()
 
+        # not_aug_inputs.shape: [B, C, H, W]
+        # inputs.shape: [B, T, C, H, W]
+        # labels.shape: [B]
         B = inputs.shape[0]
+
+        # sdtw_inputs.shape: [B, T, C, H, W]
         sdtw_inputs = inputs
-        sdtw_labels = labels
 
         # SER
         if not self.buffer.is_empty():
             # Retrieves from the buffer a mini-batch of size 'minibatch_size' of data and their labels
             # Applies the transforms to the data
+            # buf_inputs.shape: [B, T, C, H, W]
+            # buf_labels.shape: [B]
             buf_inputs, buf_labels = self.buffer.get_data(
                 self.args.minibatch_size, transform=self.buffer_transform, device=self.device)
 
             # Augments the current batch with the mini-batch of data from the buffer
+            # inputs.shape: [2B, T, C, H, W]
             inputs = torch.cat((inputs, buf_inputs))
+            # labels.shape: [2B]
             labels = torch.cat((labels, buf_labels))
 
         # The inputs are transposed to the shape [T, B, C, H, W] for compatibility with SNN model
+        # inputs.shape: [T, B, C, H, W] or [T, 2B, C, H, W]
         inputs = inputs.transpose(0, 1).contiguous()
 
         # The model processes the data
+        # outputs.shape: [T, B, K] or [T, 2B, K]
         outputs = self.net(inputs)
 
         # CE loss computation with or without temporal separation based on the 'temp_sep' arg
@@ -158,10 +168,11 @@ class Staer(ContinualModel):
             ce_loss_raw = self.ce_loss(outputs, labels)
 
         # The inputs are transposed to the shape [T, B, C, H, W] for compatibility with SNN model
+        # sdtw_inputs.shape: [T, B, C, H, W]
         sdtw_inputs = sdtw_inputs.transpose(0, 1).contiguous()
 
         # Creates the outputs for the Soft-DTW by interpolating the original temporal dimension
-        # sdtw_outputs.shape: [B, T, K]
+        # sdtw_outputs.shape: [T/2, B, K] or [T, B, K] or [2T, B, K]
         sdtw_outputs = self.net(sdtw_inputs)
         sdtw_outputs = self._build_sdtw_logits(sdtw_outputs)
 
@@ -169,16 +180,26 @@ class Staer(ContinualModel):
         sdtw_loss_raw = 0
         sdtw_loss = 0
         if not self.sdtw_buffer.is_empty():
-            # Retrieves from the buffer a mini-batch of size 'minibatch_size' of logits
+            # Retrieves from the buffer a mini-batch of size 'minibatch_size' of data and their output computed
+            # with the old parameters of the SNN w.r.t. the current training process
+            # Applies the transforms to the data
+            # sdtw_buf_inputs.shape: [B, T, C, H, W]
+            # past_sdtw_outputs.shape: [B, T/2, K] or [B, T, K] or [B, 2T, K]
             sdtw_buf_inputs, past_sdtw_outputs = self.sdtw_buffer.get_data(
                 self.args.minibatch_size, transform=self.buffer_transform, device=self.device)
 
             # The buffer examples are transposed to the shape [T, B, C, H, W] for compatibility
+            # sdtw_buf_inputs.shape: [T, B, C, H, W]
             sdtw_buf_inputs = sdtw_buf_inputs.transpose(0, 1).contiguous()
 
             # Creates the outputs for the buffer examples using the updated parameters of the SNN
+            # sdtw_buf_outputs.shape: [T/2, B, K] or [T, B, K] or [2T, B, K]
             sdtw_buf_outputs = self.net(sdtw_buf_inputs)
             sdtw_buf_outputs = self._build_sdtw_logits(sdtw_buf_outputs)
+
+            # The outputs computed with the updated parameters of the SNN are transposed to [B, T, K]
+            # for compatibility with Soft-DTW
+            # sdtw_buf_outputs.shape: [B, T/2, K] or [B, T, K] or [B, 2T, K]
             sdtw_buf_outputs = sdtw_buf_outputs.transpose(0, 1).contiguous()
 
             # Soft-DTW loss computation between past logits and current logits
@@ -197,7 +218,11 @@ class Staer(ContinualModel):
         # Adds to the buffer the current non-augmented data and their labels
         self.buffer.add_data(examples=not_aug_inputs, labels=labels[:B])
 
-        # Adds to the buffer the current non-augmented data and their logits for Soft-DTW
+        # To add the output of the network of shape [T, B, K] (or [T/2, B, K] or [2T, B, K]) to the buffer,
+        # its shape must be transposed to [B, T, K] (or [B, T/2, K] or [B, 2T, K]) for compatibility with Mammoth
+        sdtw_outputs = sdtw_outputs.transpose(0, 1).contiguous()
+
+        # Adds to the buffer the current non-augmented data and their outputs for Soft-DTW
         self.sdtw_buffer.add_data(examples=not_aug_inputs, logits=sdtw_outputs.data)
 
         return loss.item()

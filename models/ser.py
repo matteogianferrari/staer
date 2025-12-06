@@ -69,13 +69,15 @@ class Ser(ContinualModel):
 
         # not_aug_inputs.shape: [B, C, H, W]
         # inputs.shape: [B, T, C, H, W]
-        # labels: [B]
+        # labels.shape: [B]
         B = inputs.shape[0]
 
         # SER
         if not self.buffer.is_empty():
             # Retrieves from the buffer a mini-batch of size 'minibatch_size' of data and their labels
             # Applies the transforms to the data
+            # buf_inputs.shape: [B, T, C, H, W]
+            # buf_labels.shape: [B]
             buf_inputs, buf_labels = self.buffer.get_data(
                 self.args.minibatch_size, transform=self.buffer_transform, device=self.device)
 
