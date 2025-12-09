@@ -183,34 +183,44 @@ class Staer2(ContinualModel):
             # past_sdtw_outputs3.shape: [B, 2T, K]
             _, past_sdtw_outputs3 = self.sdtw_buffer3.get_data(self.args.minibatch_size, device=self.device)
 
-            # The buffer examples are transposed to the shape [T, B, C, H, W] for compatibility
-            # sdtw_buf_inputs.shape: [T, B, C, H, W]
-            sdtw_buf_inputs = sdtw_buf_inputs.transpose(0, 1).contiguous()
+            # v
+            # past_sdtw_outputs1.shape: [B/2, T/2, K]
+            past_sdtw_outputs1 = past_sdtw_outputs1[: B // 2, ...]
+            # past_sdtw_outputs3.shape: [B/2, 2T, K]
+            past_sdtw_outputs3 = past_sdtw_outputs3[: B // 2, ...]
+
+            # Creates
+            # sdtw_buf_inputs1.shape: [B, T, C, H, W]
+            sdtw_buf_inputs1 = sdtw_buf_inputs
+            # sdtw_buf_inputs2.shape: [B/2, T, C, H, W]
+            sdtw_buf_inputs2 = sdtw_buf_inputs[: B // 2, ...]
+
+            # The Soft-DTW inputs are transposed to the shape [T, B/2, C, H, W] or [T, B, C, H, W]
+            # for compatibility with SNN model
+            # sdtw_buf_inputs1.shape: [T, B, C, H, W]
+            sdtw_buf_inputs1 = sdtw_buf_inputs1.transpose(0, 1).contiguous()
+            # sdtw_buf_inputs2.shape: [T, B/2, C, H, W]
+            sdtw_buf_inputs2 = sdtw_buf_inputs2.transpose(0, 1).contiguous()
 
             # Creates the outputs for the buffer examples using the updated parameters of the SNN
-            # sdtw_buf_outputs.shape: [T, B, K]
-            sdtw_buf_outputs = self.net(sdtw_buf_inputs)
+            # sdtw_buf_outputs1.shape: [T, B, K]
+            sdtw_buf_outputs1 = self.net(sdtw_buf_inputs1)
+            # sdtw_buf_outputs2.shape: [T, B/2, K]
+            sdtw_buf_outputs2 = self.net(sdtw_buf_inputs2)
 
-            # The outputs computed with the updated parameters of the SNN are transposed to [B, T, K]
+            # The outputs computed with the updated parameters of the SNN are transposed to [B, T, K] or [B/2, T, K]
             # for compatibility with Soft-DTW
-            # sdtw_buf_outputs.shape: [B, T, K]
-            sdtw_buf_outputs = sdtw_buf_outputs.transpose(0, 1).contiguous()
+            # sdtw_buf_outputs1.shape: [B, T, K]
+            sdtw_buf_outputs1 = sdtw_buf_outputs1.transpose(0, 1).contiguous()
+            # sdtw_buf_outputs2.shape: [B/2, T, K]
+            sdtw_buf_outputs2 = sdtw_buf_outputs2.transpose(0, 1).contiguous()
 
             # Soft-DTW loss computation between past outputs and current outputs
-            sdtw1 = self.sdtw_loss(sdtw_buf_outputs, past_sdtw_outputs1)
-            sdtw2 = self.sdtw_loss(sdtw_buf_outputs, past_sdtw_outputs2)
-            sdtw3 = self.sdtw_loss(sdtw_buf_outputs, past_sdtw_outputs3)
+            sdtw1 = self.sdtw_loss(sdtw_buf_outputs1, past_sdtw_outputs2)
+            sdtw2 = self.sdtw_loss(sdtw_buf_outputs2, past_sdtw_outputs1)
+            sdtw3 = self.sdtw_loss(sdtw_buf_outputs2, past_sdtw_outputs3)
 
-            # OPTIONAL: Normalize the values
-            sdtw1 /= (sdtw1 + sdtw2 + sdtw3)
-            sdtw2 /= (sdtw1 + sdtw2 + sdtw3)
-            sdtw3 /= (sdtw1 + sdtw2 + sdtw3)
-
-            # Assigns randomly the value of the Soft-DTW between:
-            # - [B, T, K] and [B, T/2, K]
-            # - [B, T, K] and [B, T, K]
-            # - [B, T, K] and [B, 2T, K]
-            sdtw_loss_raw = (sdtw1 + sdtw2 + sdtw3) / 3
+            sdtw_loss_raw = (sdtw1 + 0.5 * sdtw2 + 0.5 * sdtw3) / (1 + 0.5 + 0.5)
             sdtw_loss = self.beta * sdtw_loss_raw
 
         if self.temp_sep:
