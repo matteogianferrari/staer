@@ -49,6 +49,16 @@ class Staer2(ContinualModel):
             help='Native Hyperparameter of Soft-DTW on normalization.'
         )
 
+        parser.add_argument(
+            '--alpha1', type=float, default=1e-2,
+            help='Hyperparameter that balances the Soft-DTW term of the loss.'
+        )
+
+        parser.add_argument(
+            '--alpha2', type=float, default=1e-2,
+            help='Hyperparameter that balances the Soft-DTW term of the loss.'
+        )
+
         return parser
 
     def __init__(self, backbone, loss, args, transform, dataset=None):
@@ -72,6 +82,8 @@ class Staer2(ContinualModel):
         self.beta = args.beta
         self.sdtw_gamma = args.sdtw_gamma
         self.sdtw_norm = args.sdtw_norm
+        self.alpha1 = args.alpha1
+        self.alpha2 = args.alpha2
 
         # Creates the loss with or without temporal separation based on the 'temp_sep' arg
         if self.temp_sep:
@@ -220,7 +232,7 @@ class Staer2(ContinualModel):
             sdtw2 = self.sdtw_loss(sdtw_buf_outputs2, past_sdtw_outputs1)
             sdtw3 = self.sdtw_loss(sdtw_buf_outputs2, past_sdtw_outputs3)
 
-            sdtw_loss_raw = (sdtw1 + 0.5 * sdtw2 + 0.5 * sdtw3) / (1 + 0.5 + 0.5)
+            sdtw_loss_raw = (sdtw1 + self.alpha1 * sdtw2 + self.alpha2 * sdtw3) / (1 + self.alpha1 + self.alpha2)
             sdtw_loss = self.beta * sdtw_loss_raw
 
         if self.temp_sep:
