@@ -4,7 +4,7 @@ import torchvision.transforms as transforms
 import torch.nn.functional as F
 from models.utils.continual_model import ContinualModel
 from utils.args import add_rehearsal_args, ArgumentParser
-from utils.buffer import Buffer
+from utils.buffer import Buffer, SdtwBuffer
 from datasets.transforms.static_encoding import StaticEncoding
 from models.spiking_er.losses import TSCELoss, CELoss
 from models.spiking_er.divergence import SoftDTWDivergence
@@ -103,9 +103,7 @@ class Staer2(ContinualModel):
 
         # Creates the buffers for Soft-DTW outputs, one with halve the temporal dimension, one with the same, and
         # one with double the temporal dimension
-        self.sdtw_buffer1 = Buffer(self.args.buffer_size)
-        self.sdtw_buffer2 = Buffer(self.args.buffer_size)
-        self.sdtw_buffer3 = Buffer(self.args.buffer_size)
+        self.sdtw_buffer = SdtwBuffer(self.args.buffer_size)
 
     def observe(self, inputs, labels, not_aug_inputs, epoch=None):
         """
@@ -181,19 +179,17 @@ class Staer2(ContinualModel):
         sdtw_loss = 0
 
         # Doesn't care which buffer is in the condition, all 3 are kept in synch
-        if not self.sdtw_buffer1.is_empty():
+        if not self.sdtw_buffer.is_empty():
             # Retrieves from the buffer a mini-batch of size 'minibatch_size' of data and their outputs computed
             # with the old parameters of the SNN w.r.t. the current training process, one with halve the temporal
             # dimension, one with the same, and one with double the temporal dimension
             # Applies the transforms to the data making it equivalent to the temporal dimension used for the SER part
             # sdtw_buf_inputs.shape: [B, T, C, H, W]
             # past_sdtw_outputs1.shape: [B, T/2, K]
-            sdtw_buf_inputs, past_sdtw_outputs1 = self.sdtw_buffer1.get_data(
-                self.args.minibatch_size, transform=self.buffer_transform, device=self.device)
             # past_sdtw_outputs2.shape: [B, T, K]
-            _, past_sdtw_outputs2 = self.sdtw_buffer2.get_data(self.args.minibatch_size, device=self.device)
             # past_sdtw_outputs3.shape: [B, 2T, K]
-            _, past_sdtw_outputs3 = self.sdtw_buffer3.get_data(self.args.minibatch_size, device=self.device)
+            sdtw_buf_inputs, past_sdtw_outputs1, past_sdtw_outputs2, past_sdtw_outputs3 = self.sdtw_buffer.get_data(
+                self.args.minibatch_size, transform=self.buffer_transform, device=self.device)
 
             # v
             # past_sdtw_outputs1.shape: [B/2, T/2, K]
@@ -254,8 +250,7 @@ class Staer2(ContinualModel):
         sdtw_outputs3 = sdtw_outputs3.transpose(0, 1).contiguous()
 
         # Adds to the buffer the current non-augmented data and their outputs for Soft-DTW
-        self.sdtw_buffer1.add_data(examples=not_aug_inputs, logits=sdtw_outputs1.data)
-        self.sdtw_buffer2.add_data(examples=not_aug_inputs, logits=sdtw_outputs2.data)
-        self.sdtw_buffer3.add_data(examples=not_aug_inputs, logits=sdtw_outputs3.data)
+        self.sdtw_buffer.add_data(
+            examples=not_aug_inputs, logits1=sdtw_outputs1.data, logits2=sdtw_outputs2.data, logits3=sdtw_outputs3.data)
 
         return loss.item()
