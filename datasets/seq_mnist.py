@@ -89,7 +89,7 @@ class SequentialMNIST(ContinualDataset):
 
     @set_default_from_args("backbone")
     def get_backbone():
-        return "mnistmlp"
+        return "resnet19-mnist"
 
     @staticmethod
     def get_transform():
@@ -109,7 +109,7 @@ class SequentialMNIST(ContinualDataset):
 
     @set_default_from_args('batch_size')
     def get_batch_size(self):
-        return 64
+        return 10
 
     @set_default_from_args('n_epochs')
     def get_epochs(self):
