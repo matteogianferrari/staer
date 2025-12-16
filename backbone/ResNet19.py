@@ -211,7 +211,7 @@ def resnet19_mnist(num_classes: int) -> ResNet19:
     return ResNet19(in_channels=1, num_classes=num_classes)
 
 
-@register_backbone("resnet19-cifar")
+@register_backbone("resnet19-cifar10")
 def resnet19_cifar(num_classes: int) -> ResNet19:
     """
     """
