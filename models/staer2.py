@@ -95,7 +95,6 @@ class Staer2(ContinualModel):
         self.sdtw_loss = SoftDTWDivergence(gamma=self.sdtw_gamma, normalize=self.sdtw_norm)
 
         # Creates the buffer and its transforms
-        self.buffer = Buffer(self.args.buffer_size)
         self.buffer_transform = transforms.Compose([
             dataset.get_transform(),
             StaticEncoding(T=self.T)
@@ -127,35 +126,6 @@ class Staer2(ContinualModel):
         # sdtw_inputs3.shape: [B, 2T, C, H, W]
         sdtw_inputs3 = torch.cat([inputs, inputs], dim=1)
 
-        # SER
-        if not self.buffer.is_empty():
-            # Retrieves from the buffer a mini-batch of size 'minibatch_size' of data and their labels
-            # Applies the transforms to the data
-            # buf_inputs.shape: [B, T, C, H, W]
-            # buf_labels.shape: [B]
-            buf_inputs, buf_labels = self.buffer.get_data(
-                self.args.minibatch_size, transform=self.buffer_transform, device=self.device)
-
-            # Augments the current batch with the mini-batch of data from the buffer
-            # inputs.shape: [2B, T, C, H, W]
-            inputs = torch.cat((inputs, buf_inputs))
-            # labels.shape: [2B]
-            labels = torch.cat((labels, buf_labels))
-
-        # The inputs are transposed to the shape [T, B, C, H, W] for compatibility with SNN model
-        # inputs.shape: [T, B, C, H, W] or [T, 2B, C, H, W]
-        inputs = inputs.transpose(0, 1).contiguous()
-
-        # The model processes the data
-        # outputs.shape: [T, B, K] or [T, 2B, K]
-        outputs = self.net(inputs)
-
-        # CE loss computation with or without temporal separation based on the 'temp_sep' arg
-        if self.temp_sep:
-            tsce_loss_raw = self.ce_loss(outputs, labels)
-        else:
-            ce_loss_raw = self.ce_loss(outputs, labels)
-
         # The Soft-DTW inputs are transposed to the shape [T/2, B, C, H, W] or [T, B, C, H, W] or
         # [2T, B, C, H, W] for compatibility with SNN model
         # sdtw_inputs1.shape: [T/2, B, C, H, W]
@@ -182,14 +152,22 @@ class Staer2(ContinualModel):
         if not self.sdtw_buffer.is_empty():
             # Retrieves from the buffer a mini-batch of size 'minibatch_size' of data and their outputs computed
             # with the old parameters of the SNN w.r.t. the current training process, one with halve the temporal
-            # dimension, one with the same, and one with double the temporal dimension
+            # dimension, one with the same, and one with double the temporal dimension, and their labels
             # Applies the transforms to the data making it equivalent to the temporal dimension used for the SER part
             # sdtw_buf_inputs.shape: [B, T, C, H, W]
             # past_sdtw_outputs1.shape: [B, T/2, K]
             # past_sdtw_outputs2.shape: [B, T, K]
             # past_sdtw_outputs3.shape: [B, 2T, K]
-            sdtw_buf_inputs, past_sdtw_outputs1, past_sdtw_outputs2, past_sdtw_outputs3 = self.sdtw_buffer.get_data(
+            # sdtw_buf_labels.shape: [B]
+            sdtw_buf_inputs, sdtw_buf_labels, past_sdtw_outputs1, past_sdtw_outputs2, past_sdtw_outputs3 = self.sdtw_buffer.get_data(
                 self.args.minibatch_size, transform=self.buffer_transform, device=self.device)
+
+            # Augments the current batch with the mini-batch of data from the buffer
+            # inputs.shape: [2B, T, C, H, W]
+            inputs = torch.cat((inputs, sdtw_buf_inputs))
+
+            # labels.shape: [2B]
+            labels = torch.cat((labels, sdtw_buf_labels))
 
             # v
             # past_sdtw_outputs1.shape: [B/2, T/2, K]
@@ -231,17 +209,25 @@ class Staer2(ContinualModel):
             sdtw_loss_raw = (sdtw1 + self.alpha1 * sdtw2 + self.alpha2 * sdtw3) / (1 + self.alpha1 + self.alpha2)
             sdtw_loss = self.beta * sdtw_loss_raw
 
+        # The inputs are transposed to the shape [T, B, C, H, W] for compatibility with SNN model
+        # inputs.shape: [T, B, C, H, W] or [T, 2B, C, H, W]
+        inputs = inputs.transpose(0, 1).contiguous()
+
+        # The model processes the data
+        # outputs.shape: [T, B, K] or [T, 2B, K]
+        outputs = self.net(inputs)
+
+        # CE loss computation with or without temporal separation based on the 'temp_sep' arg
         if self.temp_sep:
+            tsce_loss_raw = self.ce_loss(outputs, labels)
             loss = tsce_loss_raw + sdtw_loss
         else:
+            ce_loss_raw = self.ce_loss(outputs, labels)
             loss = ce_loss_raw + sdtw_loss
 
         # Backprop
         loss.backward()
         self.opt.step()
-
-        # Adds to the buffer the current non-augmented data and their labels
-        self.buffer.add_data(examples=not_aug_inputs, labels=labels[:B])
 
         # To add the outputs of the network of shape [T/2, B, K] or [T, B, K] or [2T, B, K] to the buffers,
         # their shape must be transposed to [B, T/2, K] or [B, T, K] or [B, 2T, K] for compatibility with Mammoth
@@ -251,6 +237,6 @@ class Staer2(ContinualModel):
 
         # Adds to the buffer the current non-augmented data and their outputs for Soft-DTW
         self.sdtw_buffer.add_data(
-            examples=not_aug_inputs, logits1=sdtw_outputs1.data, logits2=sdtw_outputs2.data, logits3=sdtw_outputs3.data)
+            examples=not_aug_inputs, logits1=sdtw_outputs1.data, logits2=sdtw_outputs2.data, logits3=sdtw_outputs3.data, labels=labels[:B])
 
         return loss.item()
