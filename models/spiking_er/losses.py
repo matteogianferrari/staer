@@ -184,6 +184,24 @@ class KLLoss(nn.Module):
         return loss_val
 
 
+class MSELoss(nn.Module):
+    def __init__(self) -> None:
+        """Initializes the MSELoss.
+        """
+        super(MSELoss, self).__init__()
+
+    def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        # Averages the logits over the time dimension T
+        x = x.mean(dim=0)
+
+        y = y.mean(dim=0)
+
+        # Computes the CE loss over B
+        loss_val = F.mse_loss(x, y)
+
+        return loss_val
+
+
 class EntropyReg(nn.Module):
     """Entropy Regularization (ER) term.
 
