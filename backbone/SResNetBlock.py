@@ -6,7 +6,7 @@ from backbone import MammothBackbone, register_backbone
 
 
 def conv3x3(in_channels: int, out_channels: int, stride: int = 1) -> nn.Conv2d:
-    """Pre-configured 2D 3x3 convolution to use in ResNet architectures.
+    """Pre-configured 2D 3x3 convolution to use in SResNet architectures.
 
     Args:
         in_channels: Number of input channels C_in.
@@ -27,7 +27,7 @@ def conv3x3(in_channels: int, out_channels: int, stride: int = 1) -> nn.Conv2d:
 
 
 def conv1x1(in_channels: int, out_channels: int, stride: int = 1) -> nn.Conv2d:
-    """Pre-configured 2D 1x1 convolution to use in ResNet architectures.
+    """Pre-configured 2D 1x1 convolution to use in SResNet architectures.
 
     Args:
         in_channels: Number of input channels C_in.
@@ -49,6 +49,8 @@ def conv1x1(in_channels: int, out_channels: int, stride: int = 1) -> nn.Conv2d:
 class LayerTWrapper(nn.Module):
     """Wraps a spatial layer to apply it independently along the temporal dimension.
 
+    The batch normalization doesn't work for linear layers.
+
     Attributes:
         layer: The spatial layer to execute at each time step.
         batch_norm: Batch normalization layer that expects input of shape [B, C, T, H, W].
@@ -56,8 +58,6 @@ class LayerTWrapper(nn.Module):
 
     def __init__(self, layer: nn.Module, batch_norm: nn.Module = None) -> None:
         """Initializes the LayerTWrapper.
-
-        The batch normalization doesn't work for linear layers.
 
         Args:
             layer: A PyTorch layer that processes a single time slice of shape [B, C, H, W] or [B, N].
@@ -171,13 +171,10 @@ class SResNetBlock(nn.Module):
 
     Spiking version of the classic ResNet basic block.
 
-    The membrane‐decay parameter is learnable in every LIF instance, and thresholds are also
-    learned during training.
-
     Attributes:
-        t_conv_bn1: First 3x3conv followed by a temporal batch normalization.
+        t_conv_bn1: First 3x3conv followed by a batch normalization.
         lif1: LIF neuron after the first convolution.
-        t_conv_bn2: Second 3x3conv followed by a temporal batch normalization.
+        t_conv_bn2: Second 3x3conv followed by a batch normalization.
         lif2: LIF neuron after second convolution.
         shortcuts: Identity mapping if channels don't change, 1x1 projection otherwise.
         lif3: Final LIF neuron applied after summing the residual and shortcut paths.
@@ -416,18 +413,15 @@ class SResNet(MammothBackbone):
         return x if self.training else x.mean(0)
 
 
-# TODO: args in this register backbone
-
 @register_backbone("sresnet18-mnist")
 def sresnet18_mnist(num_classes: int) -> SResNet:
-    """
-    Instantiates a SResNet18 network for Sequential SMNIST dataset.
+    """Instantiates a SResNet18 network for Sequential SMNIST dataset.
 
     Args:
-        num_classes: number of output classes
+        num_classes: number of output classes.
 
     Returns:
-        ResNet network
+        A SResNet object.
     """
     spike_grad = surrogate.atan()
 
@@ -443,20 +437,17 @@ def sresnet18_mnist(num_classes: int) -> SResNet:
         learn_beta=False,
         learn_threshold=False
     )
-
-    # TODO: STATE DICT
 
 
 @register_backbone("sresnet18-cifar10")
 def sresnet18_cifar10(num_classes: int) -> SResNet:
-    """
-    Instantiates a SResNet18 network for Sequential SCIFAR10 dataset.
+    """Instantiates a SResNet18 network for Sequential SCIFAR10 dataset.
 
     Args:
-        num_classes: number of output classes
+        num_classes: number of output classes.
 
     Returns:
-        ResNet network
+        A SResNet object.
     """
     spike_grad = surrogate.atan()
 
@@ -473,19 +464,16 @@ def sresnet18_cifar10(num_classes: int) -> SResNet:
         learn_threshold=False
     )
 
-    # TODO: STATE DICT
-
 
 @register_backbone("sresnet19-mnist")
 def sresnet19_mnist(num_classes: int) -> SResNet:
-    """
-    Instantiates a SResNet19 network for Sequential SMNIST dataset.
+    """Instantiates a SResNet19 network for Sequential SMNIST dataset.
 
     Args:
-        num_classes: number of output classes
+        num_classes: number of output classes.
 
     Returns:
-        ResNet network
+        A SResNet object.
     """
     spike_grad = surrogate.atan()
 
@@ -502,19 +490,16 @@ def sresnet19_mnist(num_classes: int) -> SResNet:
         learn_threshold=False
     )
 
-    # TODO: STATE DICT EXPERIMENTS
-
 
 @register_backbone("sresnet19-cifar10")
 def sresnet19_cifar10(num_classes: int) -> SResNet:
-    """
-    Instantiates a SResNet19 network for Sequential SCIFAR10 dataset.
+    """Instantiates a SResNet19 network for Sequential SCIFAR10 dataset.
 
     Args:
-        num_classes: number of output classes
+        num_classes: number of output classes.
 
     Returns:
-        ResNet network
+        A SResNet object.
     """
     spike_grad = surrogate.atan()
 
@@ -530,5 +515,3 @@ def sresnet19_cifar10(num_classes: int) -> SResNet:
         learn_beta=False,
         learn_threshold=False
     )
-
-    # TODO: STATE DICT EXPERIMENTS

@@ -45,21 +45,26 @@ def conv1x1(in_channels: int, out_channels: int, stride: int = 1) -> nn.Conv2d:
 
 
 class ResNetBlock(nn.Module):
-    """Basic building block for ResNet architectures.
+    """ResNet basic block.
+
+    Classic ResNet basic block.
 
     Attributes:
-        main_branch:
-        shortcut:
-        lif:
+        conv1: First 3×3 convolution of the main branch.
+        bn1: Batch normalization after `conv1`.
+        relu: ReLU activation.
+        conv2: Second 3×3 convolution of the main branch.
+        bn2: Batch normalization after `conv2`.
+        shortcuts: Projection shortcut (1×1 conv + BN) or identity if not used.
     """
 
     def __init__(self, in_channels: int, out_channels: int, stride: int) -> None:
-        """Initializes the SResNetBlock.
+        """Initializes the ResNetBlock.
 
         Args:
-            in_channels:
-            out_channels:
-            stride:
+            in_channels: Number of input channels.
+            out_channels: Number of output channels.
+            stride: Stride to apply in the first 3x3conv and in the 1x1 projection if needed.
         """
         super(ResNetBlock, self).__init__()
 
@@ -80,13 +85,13 @@ class ResNetBlock(nn.Module):
             )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
+        """Forward pass for the basic block.
 
         Args:
-            x:
+            x: Input tensor of shape [B, C, H, W].
 
         Returns:
-
+            torch.Tensor: The output of the basic block of shape [B, C, H, W].
         """
         identity = x
 
@@ -109,16 +114,24 @@ class ResNetBlock(nn.Module):
 
 
 class ResNet19(MammothBackbone):
-    """
+    """ResNet-19 backbone.
 
+    Attributes:
+        start_channels: Tracks the current number of channels while building the residual stages.
+        stem: Initial feature extractor.
+        block1: Residual stage at 128 channels (3 blocks).
+        block2: Residual stage at 256 channels (3 blocks).
+        block3: Residual stage at 512 channels (2 blocks).
+        avg_pool: Global average pooling to (1, 1).
+        mlp: Classification head mapping 512 features to `num_classes`.
     """
 
     def __init__(self, in_channels: int, num_classes: int) -> None:
-        """
+        """Initializes the ResNet19.
 
         Args:
-            in_channels:
-            num_classes:
+            in_channels: Number of channels in the input tensor.
+            num_classes: Number of output classes.
         """
         super(ResNet19, self).__init__()
 
@@ -144,15 +157,14 @@ class ResNet19(MammothBackbone):
         self.mlp = nn.Linear(in_features=512, out_features=num_classes, bias=False)
 
     def _make_block(self, num_blocks: int, out_channels: int) -> nn.Sequential:
-        """
+        """Builds a residual stage composed of multiple `ResNetBlock`.
 
         Args:
-            num_blocks:
-            out_channels:
-            beta:
+            num_blocks: Number of `ResNetBlock` instances to include in the stage.
+            out_channels: Output channel width for all blocks in the stage.
 
         Returns:
-
+            nn.Sequential: A sequential container representing the residual stage.
         """
         layers = []
 
@@ -171,13 +183,13 @@ class ResNet19(MammothBackbone):
         return nn.Sequential(*layers)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
+        """Forward pass.
 
         Args:
-            x:
+            x: Input tensor of shape [B, C, H, W].
 
         Returns:
-
+            torch.Tensor: Logits of shape [B, K].
         """
         # Stem layer, x.shape: [B, 128, 32, 32]
         x = self.stem(x)
@@ -205,15 +217,25 @@ class ResNet19(MammothBackbone):
 
 @register_backbone("resnet19-mnist")
 def resnet19_mnist(num_classes: int) -> ResNet19:
-    """
-    """
+    """Instantiates a ResNet19 network for Sequential MNIST dataset.
 
+    Args:
+        num_classes: number of output classes.
+
+    Returns:
+        A ResNet19 object.
+    """
     return ResNet19(in_channels=1, num_classes=num_classes)
 
 
 @register_backbone("resnet19-cifar10")
 def resnet19_cifar(num_classes: int) -> ResNet19:
-    """
-    """
+    """Instantiates a ResNet19 network for Sequential CIFAR10 dataset.
 
+    Args:
+        num_classes: number of output classes.
+
+    Returns:
+        A ResNet19 object.
+    """
     return ResNet19(in_channels=3, num_classes=num_classes)

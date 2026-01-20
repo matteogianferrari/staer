@@ -1,19 +1,25 @@
 import torch
-import torch.nn as nn
 
 
 class StaticEncoding:
-    """PyTorch transform operation to encode an input image.
+    """Replicate a static input tensor across a time dimension.
 
-    This transformation replicates a static input image across all time steps.
+    Given an input tensor `x` of shape [B, C, H, W], this transform returns a
+    time-expanded tensor of shape [T, B, C, H, W] where each time step contains
+    the same input.
+
+    If `mem_efficient=True`, the output is created via `unsqueeze` + `expand` and is a view with shared
+    storage across the time dimension (no new memory for the expanded dimension). If `mem_efficient=False`,
+    the output is created via `repeat` and is a new tensor (copies data), which uses more memory but
+    is safe to modify.
 
     Attributes:
         T: Number of time steps.
-        mem_efficient: Flag that selects the replication process, true for memory efficient, false otherwise.
+        mem_efficient: Flag for selecting the desired replication method.
     """
 
     def __init__(self, T: int, mem_efficient: bool = True) -> None:
-        """Initializes the StaticEncoding.
+        """Initialize the StaticEncoding object.
 
         Args:
             T: The number of time steps to replicate the image.
@@ -23,13 +29,13 @@ class StaticEncoding:
         self.mem_efficient = mem_efficient
 
     def __call__(self, x: torch.Tensor) -> torch.Tensor:
-        """Repeats the input tensor 'x' for every time step.
+        """Apply the transform.
 
         Args:
             x: Input tensor of shape [B, C, H, W].
 
         Returns:
-            torch.Tensor: A 5D tensor with shape [T, B, C, H, W] representing the encoded input over time.
+            Tensor of shape [T, B, C, H, W] on the same device and with the same dtype as `x`.
         """
         if self.mem_efficient:
             return x.unsqueeze(0).expand(self.T, *x.shape)
