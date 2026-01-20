@@ -20,7 +20,7 @@ class SeqSpikingCIFAR10(ContinualDataset):
     """Sequential Spiking CIFAR10 Dataset.
 
     This version of CIFAR10 is modified to be used in combination with Spiking Neural Networks.
-    A 'Static encoding' is applied to the standard dataset, where the images are simply repeated
+    A 'StaticEncoding' transform is applied to the standard dataset, where the images are simply repeated
     T times along the temporal dimension. The resulting images after applying the transformations
     are tensors of shape [T, C, H, W] if single element, or [T, B, C, H, W] if working with batches.
 
