@@ -9,7 +9,7 @@ This module implements the simplest form of incremental training, i.e., finetuni
 
 from models.utils.continual_model import ContinualModel
 from utils.args import add_rehearsal_args, ArgumentParser
-from models.spiking_er.losses import TSCELoss, CELoss
+from models.spiking_losses.losses import TSCELoss, CELoss
 
 
 class SpikingSgd(ContinualModel):

@@ -5,8 +5,7 @@ from models.utils.continual_model import ContinualModel
 from utils.args import add_rehearsal_args, ArgumentParser
 from utils.buffer import Buffer, SdtwBuffer
 from datasets.transforms.static_encoding import StaticEncoding
-from models.spiking_er.losses import TSCELoss, CELoss, MSELoss
-from models.spiking_er.divergence import SoftDTWDivergence
+from models.spiking_losses.losses import TSCELoss, CELoss, MSELoss
 
 
 class SDer(ContinualModel):

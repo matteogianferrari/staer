@@ -5,7 +5,7 @@ from models.utils.continual_model import ContinualModel
 from utils.args import add_rehearsal_args, ArgumentParser
 from utils.buffer import Buffer
 from datasets.transforms.static_encoding import StaticEncoding
-from models.spiking_er.losses import TSCELoss, CELoss
+from models.spiking_losses.losses import TSCELoss, CELoss
 
 
 class Ser(ContinualModel):

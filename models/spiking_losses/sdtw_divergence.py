@@ -110,22 +110,28 @@ class _SoftDTW(Function):
 
 
 class SoftDTWDivergence(nn.Module):
-    """Computes the Soft-DTW divergence.
+    """Computes the Soft-DTW divergence between two batches of time series.
 
-    This implementation supports batch processing.
+    The Soft-DTW divergence is defined in the following paper:
+    https://arxiv.org/pdf/2010.08354
 
     Attributes:
-        gamma:
-        normalize:
-        reduction:
+        gamma: Positive smoothing parameter. Smaller values approach classic DTW (less smooth),
+            larger values produce smoother alignment costs.
+        normalize: If True, divides the per-pair divergence by a simple length-based factor
+            (the mean of the two sequence lengths).
+        reduction: Specifies the reduction applied to the output:
+            - "none": returns a tensor of shape [B] (per-batch divergences)
+            - "mean": returns a scalar mean over the batch
+            - "sum":  returns a scalar sum over the batch
     """
     def __init__(self, gamma: float = 1.0, reduction: str = "mean", normalize: bool = False) -> None:
         """Initializes the SoftDTWDivergence.
 
         Args:
-            gamma:
-            reduction:
-            normalize:
+            gamma: Soft-DTW smoothing parameter. Must be strictly positive.
+            reduction: Output reduction mode: "none", "mean", or "sum".
+            normalize: If True, applies simple length-based normalization to the per-batch divergence values.
         """
         super().__init__()
 
@@ -165,7 +171,8 @@ class SoftDTWDivergence(nn.Module):
              Y: Tensor representing a batch of time series with shape [B, T2, K].
 
         Returns:
-            The
+            The mean cost if reduction is 'mean', else the sum cost if reduction is 'sum',
+            else the tensor of per-batch costs.
         """
         # Sanity checks
         assert X.dim() == 3 and Y.dim() == 3, "X and Y must be (B, T, K)"

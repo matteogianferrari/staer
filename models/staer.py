@@ -1,12 +1,13 @@
+import random
 import torch
 import torchvision.transforms as transforms
 import torch.nn.functional as F
 from models.utils.continual_model import ContinualModel
 from utils.args import add_rehearsal_args, ArgumentParser
-from utils.buffer import Buffer
+from utils.buffer import Buffer, SdtwBuffer
 from datasets.transforms.static_encoding import StaticEncoding
-from models.spiking_er.losses import TSCELoss, CELoss
-from models.spiking_er.divergence import SoftDTWDivergence
+from models.spiking_losses.losses import TSCELoss, CELoss
+from models.spiking_losses.sdtw_divergence import SoftDTWDivergence
 
 
 class Staer(ContinualModel):
@@ -48,12 +49,14 @@ class Staer(ContinualModel):
             help='Native Hyperparameter of Soft-DTW on normalization.'
         )
 
-        # 'halve' makes the temporal dimension for the Soft-DTW past logits the half of the current T, requires T>=2
-        # 'same' makes the temporal dimension for the Soft-DTW past logits the same of the current T
-        # 'double' makes the temporal dimension for the Soft-DTW past logits double the current T
         parser.add_argument(
-            '--sdtw_T', type=str, default='same',
-            help='Temporal dimension for the past logits for alignment. Select between [halve, same, double].'
+            '--alpha1', type=float, default=1e-2,
+            help='Hyperparameter that balances the Soft-DTW term of the loss.'
+        )
+
+        parser.add_argument(
+            '--alpha2', type=float, default=1e-2,
+            help='Hyperparameter that balances the Soft-DTW term of the loss.'
         )
 
         return parser
@@ -68,13 +71,9 @@ class Staer(ContinualModel):
         """
         super(Staer, self).__init__(backbone, loss, args, transform, dataset=dataset)
 
-        # Soft-DTW temporal factors
-        sdtw_factors = {'halve': 0.5, 'same': 1.0, 'double': 2.0}
-
         # Model's specific args
         # Temporal dimension
         self.T = args.T
-        self.sdtw_T = int(round(self.T * sdtw_factors[args.sdtw_T]))
 
         # Temporal separation
         self.temp_sep = args.temp_sep
@@ -83,6 +82,8 @@ class Staer(ContinualModel):
         self.beta = args.beta
         self.sdtw_gamma = args.sdtw_gamma
         self.sdtw_norm = args.sdtw_norm
+        self.alpha1 = args.alpha1
+        self.alpha2 = args.alpha2
 
         # Creates the loss with or without temporal separation based on the 'temp_sep' arg
         if self.temp_sep:
@@ -100,27 +101,9 @@ class Staer(ContinualModel):
             StaticEncoding(T=self.T)
         ])
 
-        # Creates the buffer for Soft-DTW logits
-        self.sdtw_buffer = Buffer(self.args.buffer_size)
-
-    def _build_sdtw_logits(self, outputs: torch.Tensor) -> torch.Tensor:
-        """
-        Interpolate 'outputs' along the temporal dimension from T to sdtw_T.
-        Works for logits shaped either [T, B, K].
-        """
-        if outputs.dim() != 3:
-            raise ValueError(f"Expected 3D outputs, got shape {outputs.shape}")
-
-        # 'same' case
-        if self.sdtw_T == self.T:
-            return outputs
-        else:
-            # Changes the order from [T, B, K] to [B, K, T]
-            x = outputs.permute(1, 2, 0)
-            x = F.interpolate(x, size=self.sdtw_T, mode="linear", align_corners=False)
-
-            # Changes the order from [B, K, T] to [T, B, K]
-            return x.permute(2, 0, 1)
+        # Creates the buffers for Soft-DTW outputs, one with halve the temporal dimension, one with the same, and
+        # one with double the temporal dimension
+        self.sdtw_buffer = SdtwBuffer(self.args.buffer_size)
 
     def observe(self, inputs, labels, not_aug_inputs, epoch=None):
         """
@@ -135,8 +118,14 @@ class Staer(ContinualModel):
         # labels.shape: [B]
         B = inputs.shape[0]
 
-        # sdtw_inputs.shape: [B, T, C, H, W]
-        sdtw_inputs = inputs
+        # Creates the inputs for the Soft-DTW outputs, one with halve the temporal dimension, one with the same, and
+        # one with double the temporal dimension
+        # sdtw_inputs.shape: [B, T/2, C, H, W]
+        sdtw_inputs1 = inputs[:, : self.T // 2, :]
+        # sdtw_inputs2.shape: [B, T, C, H, W]
+        sdtw_inputs2 = inputs
+        # sdtw_inputs3.shape: [B, 2T, C, H, W]
+        sdtw_inputs3 = torch.cat([inputs, inputs], dim=1)
 
         # SER
         if not self.buffer.is_empty():
@@ -167,43 +156,79 @@ class Staer(ContinualModel):
         else:
             ce_loss_raw = self.ce_loss(outputs, labels)
 
-        # The inputs are transposed to the shape [T, B, C, H, W] for compatibility with SNN model
-        # sdtw_inputs.shape: [T, B, C, H, W]
-        sdtw_inputs = sdtw_inputs.transpose(0, 1).contiguous()
+        # The Soft-DTW inputs are transposed to the shape [T/2, B, C, H, W] or [T, B, C, H, W] or
+        # [2T, B, C, H, W] for compatibility with SNN model
+        # sdtw_inputs1.shape: [T/2, B, C, H, W]
+        sdtw_inputs1 = sdtw_inputs1.transpose(0, 1).contiguous()
+        # sdtw_inputs2.shape: [T, B, C, H, W]
+        sdtw_inputs2 = sdtw_inputs2.transpose(0, 1).contiguous()
+        # sdtw_inputs3.shape: [2T, B, C, H, W]
+        sdtw_inputs3 = sdtw_inputs3.transpose(0, 1).contiguous()
 
-        # Creates the outputs for the Soft-DTW by interpolating the original temporal dimension
-        # sdtw_outputs.shape: [T/2, B, K] or [T, B, K] or [2T, B, K]
-        sdtw_outputs = self.net(sdtw_inputs)
-        sdtw_outputs = self._build_sdtw_logits(sdtw_outputs)
+        # Creates the outputs for the Soft-DTW, one with halve the temporal dimension, one with the same, and
+        # one with double the temporal dimension
+        # sdtw_outputs1.shape: [T/2, B, K]
+        sdtw_outputs1 = self.net(sdtw_inputs1)
+        # sdtw_outputs2.shape: [T, B, K]
+        sdtw_outputs2 = self.net(sdtw_inputs2)
+        # sdtw_outputs3.shape: [2T, B, K]
+        sdtw_outputs3 = self.net(sdtw_inputs3)
 
         # Temporal alignment with Soft-DTW
         sdtw_loss_raw = 0
         sdtw_loss = 0
+
+        # Doesn't care which buffer is in the condition, all 3 are kept in synch
         if not self.sdtw_buffer.is_empty():
-            # Retrieves from the buffer a mini-batch of size 'minibatch_size' of data and their output computed
-            # with the old parameters of the SNN w.r.t. the current training process
-            # Applies the transforms to the data
+            # Retrieves from the buffer a mini-batch of size 'minibatch_size' of data and their outputs computed
+            # with the old parameters of the SNN w.r.t. the current training process, one with halve the temporal
+            # dimension, one with the same, and one with double the temporal dimension
+            # Applies the transforms to the data making it equivalent to the temporal dimension used for the SER part
             # sdtw_buf_inputs.shape: [B, T, C, H, W]
-            # past_sdtw_outputs.shape: [B, T/2, K] or [B, T, K] or [B, 2T, K]
-            sdtw_buf_inputs, past_sdtw_outputs = self.sdtw_buffer.get_data(
+            # past_sdtw_outputs1.shape: [B, T/2, K]
+            # past_sdtw_outputs2.shape: [B, T, K]
+            # past_sdtw_outputs3.shape: [B, 2T, K]
+            sdtw_buf_inputs, past_sdtw_outputs1, past_sdtw_outputs2, past_sdtw_outputs3 = self.sdtw_buffer.get_data(
                 self.args.minibatch_size, transform=self.buffer_transform, device=self.device)
 
-            # The buffer examples are transposed to the shape [T, B, C, H, W] for compatibility
-            # sdtw_buf_inputs.shape: [T, B, C, H, W]
-            sdtw_buf_inputs = sdtw_buf_inputs.transpose(0, 1).contiguous()
+            # v
+            # past_sdtw_outputs1.shape: [B/2, T/2, K]
+            past_sdtw_outputs1 = past_sdtw_outputs1[: B // 2, ...]
+            # past_sdtw_outputs3.shape: [B/2, 2T, K]
+            past_sdtw_outputs3 = past_sdtw_outputs3[: B // 2, ...]
+
+            # Creates
+            # sdtw_buf_inputs1.shape: [B, T, C, H, W]
+            sdtw_buf_inputs1 = sdtw_buf_inputs
+            # sdtw_buf_inputs2.shape: [B/2, T, C, H, W]
+            sdtw_buf_inputs2 = sdtw_buf_inputs[: B // 2, ...]
+
+            # The Soft-DTW inputs are transposed to the shape [T, B/2, C, H, W] or [T, B, C, H, W]
+            # for compatibility with SNN model
+            # sdtw_buf_inputs1.shape: [T, B, C, H, W]
+            sdtw_buf_inputs1 = sdtw_buf_inputs1.transpose(0, 1).contiguous()
+            # sdtw_buf_inputs2.shape: [T, B/2, C, H, W]
+            sdtw_buf_inputs2 = sdtw_buf_inputs2.transpose(0, 1).contiguous()
 
             # Creates the outputs for the buffer examples using the updated parameters of the SNN
-            # sdtw_buf_outputs.shape: [T/2, B, K] or [T, B, K] or [2T, B, K]
-            sdtw_buf_outputs = self.net(sdtw_buf_inputs)
-            sdtw_buf_outputs = self._build_sdtw_logits(sdtw_buf_outputs)
+            # sdtw_buf_outputs1.shape: [T, B, K]
+            sdtw_buf_outputs1 = self.net(sdtw_buf_inputs1)
+            # sdtw_buf_outputs2.shape: [T, B/2, K]
+            sdtw_buf_outputs2 = self.net(sdtw_buf_inputs2)
 
-            # The outputs computed with the updated parameters of the SNN are transposed to [B, T, K]
+            # The outputs computed with the updated parameters of the SNN are transposed to [B, T, K] or [B/2, T, K]
             # for compatibility with Soft-DTW
-            # sdtw_buf_outputs.shape: [B, T/2, K] or [B, T, K] or [B, 2T, K]
-            sdtw_buf_outputs = sdtw_buf_outputs.transpose(0, 1).contiguous()
+            # sdtw_buf_outputs1.shape: [B, T, K]
+            sdtw_buf_outputs1 = sdtw_buf_outputs1.transpose(0, 1).contiguous()
+            # sdtw_buf_outputs2.shape: [B/2, T, K]
+            sdtw_buf_outputs2 = sdtw_buf_outputs2.transpose(0, 1).contiguous()
 
-            # Soft-DTW loss computation between past logits and current logits
-            sdtw_loss_raw = self.sdtw_loss(sdtw_buf_outputs, past_sdtw_outputs)
+            # Soft-DTW loss computation between past outputs and current outputs
+            sdtw1 = self.sdtw_loss(sdtw_buf_outputs1, past_sdtw_outputs2)
+            sdtw2 = self.sdtw_loss(sdtw_buf_outputs2, past_sdtw_outputs1)
+            sdtw3 = self.sdtw_loss(sdtw_buf_outputs2, past_sdtw_outputs3)
+
+            sdtw_loss_raw = (sdtw1 + self.alpha1 * sdtw2 + self.alpha2 * sdtw3) / (1 + self.alpha1 + self.alpha2)
             sdtw_loss = self.beta * sdtw_loss_raw
 
         if self.temp_sep:
@@ -218,11 +243,14 @@ class Staer(ContinualModel):
         # Adds to the buffer the current non-augmented data and their labels
         self.buffer.add_data(examples=not_aug_inputs, labels=labels[:B])
 
-        # To add the output of the network of shape [T, B, K] (or [T/2, B, K] or [2T, B, K]) to the buffer,
-        # its shape must be transposed to [B, T, K] (or [B, T/2, K] or [B, 2T, K]) for compatibility with Mammoth
-        sdtw_outputs = sdtw_outputs.transpose(0, 1).contiguous()
+        # To add the outputs of the network of shape [T/2, B, K] or [T, B, K] or [2T, B, K] to the buffers,
+        # their shape must be transposed to [B, T/2, K] or [B, T, K] or [B, 2T, K] for compatibility with Mammoth
+        sdtw_outputs1 = sdtw_outputs1.transpose(0, 1).contiguous()
+        sdtw_outputs2 = sdtw_outputs2.transpose(0, 1).contiguous()
+        sdtw_outputs3 = sdtw_outputs3.transpose(0, 1).contiguous()
 
         # Adds to the buffer the current non-augmented data and their outputs for Soft-DTW
-        self.sdtw_buffer.add_data(examples=not_aug_inputs, logits=sdtw_outputs.data)
+        self.sdtw_buffer.add_data(
+            examples=not_aug_inputs, logits1=sdtw_outputs1.data, logits2=sdtw_outputs2.data, logits3=sdtw_outputs3.data)
 
         return loss.item()
