@@ -134,7 +134,7 @@ class SequentialCIFAR10(ContinualDataset):
 
     @set_default_from_args("backbone")
     def get_backbone():
-        return "resnet18"
+        return "resnet19-cifar10"
 
     @staticmethod
     def get_loss():
